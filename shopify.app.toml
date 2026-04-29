@@ -1,0 +1,31 @@
+# Cursor Dev — Admin API app for Y2KASE (products, inventory, themes, scripts)
+# After editing: run `shopify app deploy` (or Partner Dashboard → Release) so scopes & URLs sync.
+# Token scripts use client_credentials — reinstall app on the store after scope changes, then `npm run refresh-token`.
+
+name = "Cursor Dev"
+client_id = "9752e5a4b01148751b3371b843cf010e"
+
+# Use your public storefront URL so installs/OAuth land on a real HTTPS domain (not example.com).
+application_url = "https://y2kase.com"
+embedded = false
+
+[access_scopes]
+# Includes write_themes so theme files can be pushed via Admin API after reinstall.
+scopes = "read_products,write_products,read_orders,write_orders,read_customers,write_customers,read_inventory,write_inventory,read_locations,read_analytics,read_markets,write_markets,read_price_rules,write_price_rules,read_discounts,write_discounts,read_shipping,read_content,write_content,read_themes,write_themes,read_script_tags,write_script_tags,read_metaobjects,write_metaobjects,read_online_store_pages,write_online_store_pages,read_online_store_navigation,write_online_store_navigation,read_legal_policies,write_legal_policies"
+
+[auth]
+# OAuth redirect allowlist — must match what Shopify CLI / OAuth uses.
+# Primary: store domain path (create a redirect/callback page later if you use full OAuth).
+# Secondary: localhost for Shopify CLI when running linked app commands.
+redirect_urls = [
+  "https://y2kase.com/auth/callback",
+  "http://localhost:3457/auth/callback",
+  "http://127.0.0.1:3457/auth/callback",
+]
+
+[webhooks]
+api_version = "2026-04"
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "y2kase-1435.myshopify.com"

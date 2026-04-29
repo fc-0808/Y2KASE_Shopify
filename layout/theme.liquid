@@ -1,0 +1,236 @@
+<!doctype html>
+<html
+  {% if request.design_mode %}
+    class="shopify-design-mode"
+  {% endif %}
+  lang="{{ request.locale.iso_code }}"
+>
+  <head>
+    {%- if settings.favicon != blank -%}
+      <link
+        rel="icon"
+        type="image/png"
+        href="{{ settings.favicon | image_url: width: 32, height: 32 }}"
+      >
+    {%- endif -%}
+
+    {% comment %} This a way to wait for main content to load when navigating to a new page so that the view transitions can work consistently {% endcomment %}
+    {% if settings.transition_to_main_product or settings.page_transition_enabled %}
+      <link
+        rel="expect"
+        href="#MainContent"
+        blocking="render"
+        id="view-transition-render-blocker"
+      >
+    {% endif %}
+
+    {%- render 'meta-tags' -%}
+    {%- render 'stylesheets' -%}
+    {%- render 'fonts' -%}
+    {%- render 'scripts' -%}
+    {%- render 'theme-styles-variables' -%}
+    {%- render 'color-schemes' -%}
+
+    {% if request.design_mode %}
+      {%- render 'theme-editor' -%}
+    {% endif %}
+
+    {{ content_for_header }}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <style id="y2kase-brand">
+      :root {
+        --color-primary-button-background: rgb(255,45,135) !important;
+        --color-primary-button-border: rgb(255,45,135) !important;
+        --color-primary-button-hover-background: rgb(212,79,191) !important;
+        --color-secondary-button-text: rgb(255,45,135) !important;
+        --color-secondary-button-border: rgb(255,45,135) !important;
+      }
+      body { font-family: 'Nunito', sans-serif !important; background-color: #FFF5FA !important; }
+      h1,h2,h3,h4,h5,h6 { font-family: 'Fredoka One', sans-serif !important; }
+      h1 { color: #FF2D87 !important; }
+      h2,h3,h4 { color: #3D1D6E !important; }
+      .header-section, .header { background: rgba(255,255,255,0.92) !important; border-bottom: 2px solid #FFB3D9 !important; box-shadow: 0 2px 20px rgba(255,45,135,0.12) !important; }
+      .announcement-bar { background: linear-gradient(135deg,#FF9ECC,#D499FF,#99C5FF) !important; }
+      .announcement-bar * { color: #fff !important; font-family: 'Fredoka One',sans-serif !important; }
+      .button:not(.button-unstyled), .button--primary:not(.button-unstyled), button[name="add"], .shopify-payment-button__button { background: linear-gradient(135deg,#FF2D87,#D44FBF) !important; color: #fff !important; border: none !important; border-radius: 999px !important; box-shadow: 0 4px 16px rgba(255,45,135,0.4) !important; }
+      .button:not(.button-unstyled):hover, button[name="add"]:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 24px rgba(255,45,135,0.5) !important; }
+      .card-wrapper, .card { border-radius: 14px !important; border: none !important; box-shadow: 0 2px 14px rgba(255,45,135,0.07),0 1px 4px rgba(0,0,0,0.04) !important; transition: transform 0.35s,box-shadow 0.35s !important; }
+      .card-wrapper:hover, .card:hover { transform: translateY(-8px) !important; box-shadow: 0 20px 48px rgba(255,45,135,0.18),0 6px 16px rgba(155,107,255,0.12) !important; }
+      .price, .price__regular { color: #FF2D87 !important; font-family: 'Fredoka One',sans-serif !important; }
+      .badge { background: #FF2D87 !important; color: #fff !important; border-radius: 999px !important; }
+      footer, .footer { background: linear-gradient(135deg,#F8D7ED,#E8D4FF,#D4E8FF) !important; border-top: 2px solid #FFB3D9 !important; }
+      footer a, .footer a { color: #FF2D87 !important; }
+      ::-webkit-scrollbar-thumb { background: linear-gradient(#FF2D87,#C9B4FF) !important; }
+    </style>
+  </head>
+
+  <body class="page-width-{{ settings.page_width }} card-hover-effect-{{ settings.card_hover_effect }}">
+    {% render 'skip-to-content-link', href: '#MainContent', text: 'accessibility.skip_to_text' %}
+    <div id="header-group">
+      {% sections 'header-group' %}
+    </div>
+
+    <script>
+      // Inline header height and menu style calculations to prevent layout shift
+      // Note: Updates in calculateHeaderGroupHeight(), updateTransparentHeaderOffset() and setHeaderMenuStyle() utilities.js should be kept in sync with this function
+      (function setHeaderHeighCustomProperties() {
+        /*
+         * Header calculation functions for maintaining CSS variables
+         * Mimic calculateHeaderGroupHeight() in utilities.js
+         */
+        const header = document.querySelector('header-component');
+        const headerGroup = document.querySelector('#header-group');
+        const hasHeaderSection = headerGroup?.querySelector('.header-section');
+
+        if (!header || !headerGroup) return;
+
+        const headerTopRow = header.querySelector('.header__row--top');
+        const headerHeight = header.offsetHeight;
+
+        // Calculate the total height of the header group
+        let headerGroupHeight = 0;
+        const children = headerGroup.children;
+        for (let i = 0; i < children.length; i++) {
+          const element = children[i];
+          if (element === header || !(element instanceof HTMLElement)) continue;
+          headerGroupHeight += element.offsetHeight;
+        }
+
+        // Check for transparent header special case
+        if (header.hasAttribute('transparent') && header.parentElement?.nextElementSibling) {
+          headerGroupHeight += headerHeight;
+        }
+
+        // Set CSS variables
+        document.body.style.setProperty('--header-height', `${headerHeight}px`);
+        document.body.style.setProperty('--header-group-height', `${headerGroupHeight}px`);
+
+        if (headerTopRow) {
+          window.requestAnimationFrame(function () {
+            document.body.style.setProperty('--top-row-height', `${headerTopRow.offsetHeight}px`);
+          });
+        }
+
+        /**
+         * Updates CSS custom properties for transparent header offset calculation
+         * Mimic updateTransparentHeaderOffset() in utilities.js
+         */
+
+        if (!hasHeaderSection || !header?.hasAttribute('transparent')) {
+          document.body.style.setProperty('--transparent-header-offset-boolean', '0');
+          return;
+        }
+
+        const hasImmediateSection = hasHeaderSection.nextElementSibling?.classList.contains('shopify-section');
+
+        const shouldApplyOffset = !hasImmediateSection ? '1' : '0';
+        document.body.style.setProperty('--transparent-header-offset-boolean', shouldApplyOffset);
+      })();
+
+      (function setHeaderMenuStyle() {
+        const headerComponent = document.querySelector('#header-component');
+        if (headerComponent) {
+          const isTouchDevice = 'ontouchstart' in window && navigator.maxTouchPoints > 0;
+          const overflowList = headerComponent?.querySelector('overflow-list');
+          const hasReachedMinimum = overflowList && overflowList.hasAttribute('minimum-reached');
+          headerComponent.dataset.menuStyle = isTouchDevice || hasReachedMinimum ? 'drawer' : 'menu';
+        }
+      })();
+    </script>
+
+    <main
+      id="MainContent"
+      class="content-for-layout"
+      role="main"
+      data-page-transition-enabled="{{ settings.page_transition_enabled }}"
+      data-product-transition="{{ settings.transition_to_main_product }}"
+      data-template="{{ template }}"
+    >
+      {{ content_for_layout }}
+    </main>
+
+    {%- if template.name == 'index' -%}
+      <div class="y2k-trust-bar" role="region" aria-label="Store benefits">
+        <div class="y2k-trust-bar__item">
+          <span class="y2k-trust-bar__icon">✈️</span>
+          Worldwide Shipping
+        </div>
+        <div class="y2k-trust-bar__item">
+          <span class="y2k-trust-bar__icon">⭐</span>
+          1,000+ Happy Customers
+        </div>
+        <div class="y2k-trust-bar__item">
+          <span class="y2k-trust-bar__icon">🔒</span>
+          Secure Checkout
+        </div>
+        <div class="y2k-trust-bar__item">
+          <span class="y2k-trust-bar__icon">💝</span>
+          Kawaii Guaranteed
+        </div>
+      </div>
+    {%- endif -%}
+
+    <footer>
+      {% sections 'footer-group' %}
+    </footer>
+
+    {% render 'search-modal' %}
+
+    {% if settings.quick_add or settings.mobile_quick_add %}
+      {% render 'quick-add-modal' %}
+    {% endif %}
+
+    <script>
+      // Override stale Shopify storefront cache: treat inventory_policy=continue as always available.
+      // Shopify's .js product endpoint may serve cached available:false even when inventory_policy
+      // is 'continue'. This script corrects the client-side variant state.
+      (function fixVariantAvailability() {
+        var originalFetch = window.fetch;
+        window.fetch = function(input, init) {
+          var url = (typeof input === 'string' ? input : input.url) || '';
+          var isProductJs = /\/products\/[^/?]+\.js(\?|$)/.test(url);
+          return originalFetch.apply(this, arguments).then(function(response) {
+            if (!isProductJs) return response;
+            return response.json().then(function(data) {
+              if (data && data.variants) {
+                data.variants = data.variants.map(function(v) {
+                  if (v.inventory_management === null || v.inventory_management === undefined) {
+                    v.available = true;
+                  }
+                  return v;
+                });
+                // Also fix product-level available
+                data.available = data.variants.some(function(v) { return v.available; });
+              }
+              return new Response(JSON.stringify(data), {
+                status: response.status,
+                statusText: response.statusText,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            });
+          });
+        };
+
+        // Also post-process inline product JSON already in the page
+        document.addEventListener('DOMContentLoaded', function() {
+          // Enable any disabled add-to-cart buttons (inventory_policy=continue products)
+          // The server-side Liquid fix handles the initial render; this handles JS overrides
+          document.querySelectorAll('button[name="add"][disabled]').forEach(function(btn) {
+            var form = btn.closest('form');
+            if (!form) return;
+            btn.removeAttribute('disabled');
+            var textSpan = btn.querySelector('.add-to-cart-text__content span span');
+            if (textSpan) {
+              var t = textSpan.textContent.trim().toLowerCase();
+              if (t === 'sold out' || t === 'unavailable') {
+                textSpan.textContent = 'Add to cart';
+              }
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

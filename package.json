@@ -1,0 +1,42 @@
+{
+  "name": "y2kase-shopify",
+  "version": "1.0.0",
+  "description": "Y2KASE Shopify store — theme development & Admin API tooling",
+  "private": true,
+  "scripts": {
+    "dev": "shopify theme dev --store y2kase-1435.myshopify.com",
+    "push": "shopify theme push --store y2kase-1435.myshopify.com",
+    "pull": "shopify theme pull --store y2kase-1435.myshopify.com",
+    "check": "shopify theme check",
+    "login": "shopify auth login --store y2kase-1435.myshopify.com",
+    "logout": "shopify auth logout",
+    "info": "shopify store info --store y2kase-1435.myshopify.com",
+    "products": "node scripts/list-products.mjs",
+    "orders": "node scripts/list-orders.mjs",
+    "refresh-token": "node scripts/get-token.mjs",
+    "app:deploy": "shopify app deploy",
+    "app:deploy:cursor-dev-8": "shopify app deploy --version cursor-dev-8 --allow-updates --allow-deletes --message \"write_themes Admin API\"",
+    "push:theme": "node scripts/push-theme-files.mjs",
+    "taxonomy:dry": "node scripts/taxonomy/setup-taxonomy.mjs --dry-run",
+    "taxonomy:apply": "node scripts/taxonomy/setup-taxonomy.mjs --apply",
+    "taxonomy:collections": "node scripts/taxonomy/setup-taxonomy.mjs --apply --collections-only",
+    "import:dry": "node scripts/post-import-pipeline.mjs --dry-run",
+    "import:apply": "node scripts/post-import-pipeline.mjs --apply",
+    "import:new": "node scripts/post-import-pipeline.mjs --apply --new-only",
+    "fix:inventory": "node scripts/fix-inventory-and-pricing.mjs --apply --inventory-only",
+    "fix:pricing": "node scripts/fix-inventory-and-pricing.mjs --apply --pricing-only",
+    "fix:all": "node scripts/fix-inventory-and-pricing.mjs --apply",
+    "fix:dry": "node scripts/fix-inventory-and-pricing.mjs --dry-run",
+    "audit": "node scripts/store-audit.mjs",
+    "markets": "node scripts/check-markets.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^3.93.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
