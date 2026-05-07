@@ -73,16 +73,24 @@ p, li, span, a, label {
 
 /* ── Announcement Bar ─────────────────────────────────────── */
 .announcement-bar {
-  background: var(--y2k-gradient-vivid) !important;
+  background: linear-gradient(90deg, #FF2D87 0%, #C44FD1 40%, #7B5FDB 100%) !important;
   border-bottom: none !important;
+  box-shadow: 0 2px 12px rgba(255, 45, 135, 0.35) !important;
 }
 
 .announcement-bar * {
-  color: white !important;
+  color: #fff !important;
   font-family: var(--y2k-font-cute) !important;
   font-weight: 700 !important;
   font-size: 0.82rem !important;
-  letter-spacing: 0.06em !important;
+  letter-spacing: 0.07em !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.18) !important;
+  text-decoration: none !important;
+}
+
+.announcement-bar a:hover {
+  opacity: 0.85 !important;
+  text-decoration: underline !important;
 }
 
 /* ── Header ───────────────────────────────────────────────── */

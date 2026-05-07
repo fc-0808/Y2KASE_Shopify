@@ -127,6 +127,15 @@
           if forloop.first
             assign visible_slide_count = 0
           endif
+
+          # When showing the second image on hover, skip videos and 3D models so we
+          # never display a black first-frame. Only still images are safe hover previews.
+          if settings.show_second_image_on_hover and forloop.first == false and hidden == false
+            unless media.media_type == 'image'
+              continue
+            endunless
+          endif
+
           unless hidden
             assign visible_slide_count = visible_slide_count | plus: 1
           endunless

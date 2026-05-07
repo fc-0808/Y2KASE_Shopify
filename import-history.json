@@ -1,0 +1,15 @@
+[
+  {
+    "runId": "run-mov22isl",
+    "timestamp": "2026-05-07T05:38:34.534Z",
+    "handles": [
+      "test"
+    ],
+    "created": 0,
+    "skipped": 0,
+    "errors": 1,
+    "startedAt": "2026-05-07T05:38:34.533Z",
+    "completedAt": "2026-05-07T05:38:34.534Z",
+    "durationMs": 1
+  }
+]

@@ -49,6 +49,19 @@ const CHAR_NAMES = {
   'bambi':             'Bambi',
   'sleeping-beauty':   'Sleeping Beauty',
   'alice':             'Alice in Wonderland',
+  // Peanuts
+  'snoopy':            'Snoopy',
+  // Bandai / retro
+  'tamagotchi':        'Tamagotchi',
+  'monchhichi':        'Monchhichi',
+  // San-X
+  'rilakkuma':         'Rilakkuma',
+  'sumikko':           'Sumikko Gurashi',
+  // Sanrio additions
+  'charmmy-kitty':     'Charmmy Kitty',
+  // Miscellaneous
+  'sleepy-star':       'Sleepy Star',
+  'maneki-neko':       'Maneki Neko',
 };
 
 // Style display names (concise, descriptive)

@@ -28,10 +28,16 @@
     "fix:all": "node scripts/fix-inventory-and-pricing.mjs --apply",
     "fix:dry": "node scripts/fix-inventory-and-pricing.mjs --dry-run",
     "audit": "node scripts/store-audit.mjs",
-    "markets": "node scripts/check-markets.mjs"
+    "markets": "node scripts/check-markets.mjs",
+    "csv:build": "node scripts/etsy-to-shopify-csv.mjs",
+    "etsy:dry": "node scripts/etsy-api-import.mjs --dry-run",
+    "etsy:apply": "node scripts/etsy-api-import.mjs --apply",
+    "etsy:dashboard": "node scripts/dashboard/server.mjs"
   },
   "dependencies": {
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "open": "^11.0.0"
   },
   "devDependencies": {
     "@shopify/cli": "^3.93.2"

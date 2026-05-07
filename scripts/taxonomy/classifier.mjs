@@ -66,6 +66,19 @@ const CHARACTER_RULES = [
   { id: 'bambi',           ip: 'disney',   detect: (t) => has(t, 'bambi') },
   { id: 'sleeping-beauty', ip: 'disney',   detect: (t) => has(t, 'sleeping beauty', 'aurora', 'maleficent') },
   { id: 'alice',           ip: 'disney',   detect: (t) => has(t, 'alice in wonderland', 'alice wonderland') },
+  // ── Peanuts ────────────────────────────────────────────────────────────
+  { id: 'snoopy',          ip: 'peanuts',  detect: (t) => has(t, 'snoopy', 'peanuts', 'woodstock') },
+  // ── Bandai / retro ─────────────────────────────────────────────────────
+  { id: 'tamagotchi',      ip: 'bandai',   detect: (t) => has(t, 'tamagotchi', 'virtual pet', 'digital pet') },
+  { id: 'monchhichi',      ip: 'sekiguchi', detect: (t) => has(t, 'monchhichi') },
+  // ── San-X ──────────────────────────────────────────────────────────────
+  { id: 'rilakkuma',       ip: 'san-x',    detect: (t) => has(t, 'rilakkuma', 'korilakkuma', 'kiiroitori') },
+  { id: 'sumikko',         ip: 'san-x',    detect: (t) => has(t, 'sumikko', 'sumikko gurashi') },
+  // ── Sanrio additions ───────────────────────────────────────────────────
+  { id: 'charmmy-kitty',   ip: 'sanrio',   detect: (t) => has(t, 'charmmy kitty', 'charmmy') },
+  // ── Miscellaneous / original designs ──────────────────────────────────
+  { id: 'sleepy-star',     ip: 'indie',    detect: (t) => has(t, 'sleepy star') },
+  { id: 'maneki-neko',     ip: 'japanese', detect: (t) => has(t, 'maneki neko', 'lucky cat', 'maneki-neko') },
 ];
 
 // ── Case style detection ──────────────────────────────────────────────────────

@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Y2KASE — Import Dashboard</title>
+  <!-- JetBrains Mono for SKUs, IDs, JSON payloads, and log output -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  PANEL 1 — GLOBAL STATUS BAR                                        ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<header id="status-bar">
+  <span class="status-brand">Y2KASE</span>
+
+  <div class="status-checks" id="status-checks">
+    <!-- Populated by /api/preflight in Phase 3; shown as static for Phase 2 -->
+    <div class="check-pill ok">
+      <span class="dot"></span>
+      <span class="pill-label">Token</span>
+      <span class="pill-value">Y2KASE · Authenticated</span>
+    </div>
+    <div class="check-pill ok">
+      <span class="dot"></span>
+      <span class="pill-label">CSV</span>
+      <span class="pill-value">1,134 rows</span>
+    </div>
+    <div class="check-pill ok">
+      <span class="dot"></span>
+      <span class="pill-label">Location</span>
+      <span class="pill-value">FLAT D 10/F BLOCK 6</span>
+    </div>
+  </div>
+
+  <div class="status-actions">
+    <button class="btn btn-ghost btn-sm" id="btn-refresh-token" title="Re-exchange client credentials for a fresh SHOPIFY_ADMIN_ACCESS_TOKEN">
+      Refresh Token
+    </button>
+    <button class="btn btn-primary btn-sm" id="btn-preview">
+      <span class="spinner" id="preview-spinner" hidden></span>
+      <span id="btn-preview-label">Load Preview</span>
+    </button>
+  </div>
+</header>
+
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  MAIN WORKSPACE  (Panel 2: Audit Table  +  Panel 3: Progress)       ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<main id="workspace">
+
+  <!-- ┌──────────────────────────────────────────────────────────────────┐
+       │  PANEL 2 — PRODUCT AUDIT TABLE                                    │
+       └──────────────────────────────────────────────────────────────────┘ -->
+  <section class="panel" id="audit-panel" aria-label="Product Audit Table">
+
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-title">Product Audit</span>
+        <span class="panel-count" id="total-count">0</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" id="btn-select-all">Select All</button>
+        <button class="btn btn-primary btn-sm" id="btn-import-selected" disabled>
+          Import Selected <span id="selected-count">(0)</span>
+        </button>
+        <button class="btn btn-ghost btn-sm" id="btn-cancel-import" hidden>Cancel</button>
+      </div>
+    </div>
+
+    <div class="audit-toolbar">
+      <div class="audit-summary" id="audit-summary">
+        <span class="summary-chip new">
+          <strong id="count-new">0</strong> New
+        </span>
+        <span class="summary-chip conflict">
+          <strong id="count-conflict">0</strong> Conflict
+        </span>
+        <span class="summary-chip match">
+          <strong id="count-match">0</strong> Match
+        </span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-filter" title="Filter rows by status">Filter ▾</button>
+    </div>
+
+    <div class="table-wrap" id="table-wrap">
+      <table class="audit-table" id="audit-table">
+        <colgroup>
+          <col class="col-check">
+          <col class="col-status">
+          <col class="col-title">
+          <col class="col-handle">
+          <col class="col-variants">
+          <col class="col-price">
+          <col class="col-action">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-check">
+              <input type="checkbox" id="chk-master" title="Select / deselect all importable rows">
+            </th>
+            <th class="col-status">Status</th>
+            <th class="col-title">Title</th>
+            <th class="col-handle">Handle</th>
+            <th class="col-variants" title="Variant count">Vars</th>
+            <th class="col-price">Price</th>
+            <th class="col-action"></th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody">
+          <!-- Populated by dashboard.js on DOMContentLoaded -->
+        </tbody>
+      </table>
+    </div><!-- /.table-wrap -->
+  </section><!-- /#audit-panel -->
+
+
+  <!-- ┌──────────────────────────────────────────────────────────────────┐
+       │  PANEL 3 — IMPORT PROGRESS STREAM                                 │
+       └──────────────────────────────────────────────────────────────────┘ -->
+  <aside class="panel" id="progress-panel" aria-label="Import Progress">
+
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-title">Import Progress</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-clear-log">Clear</button>
+    </div>
+
+    <!-- Stats grid -->
+    <div class="progress-stats-grid">
+      <div class="stat-box ok">
+        <div class="stat-label">Created</div>
+        <div class="stat-value" id="stat-created">0</div>
+      </div>
+      <div class="stat-box warn">
+        <div class="stat-label">Skipped</div>
+        <div class="stat-value" id="stat-skipped">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Errors</div>
+        <div class="stat-value" id="stat-errors">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total</div>
+        <div class="stat-value" id="stat-total">0</div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-label">
+        <span>Progress</span>
+        <span id="progress-fraction">0 / 0</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Populated in real-time by SSE during an import run -->
+    <div class="progress-log" id="progress-log" aria-live="polite" aria-label="Import log"></div>
+  </aside><!-- /#progress-panel -->
+
+</main><!-- /#workspace -->
+
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  PANEL 4 — HISTORY LOG                                              ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<section id="history-panel" aria-label="Import History">
+
+  <div class="panel-header">
+    <div class="panel-header-left">
+      <span class="panel-title">Import History</span>
+      <span class="panel-count" id="history-count">0</span>
+    </div>
+  </div>
+
+  <div class="history-scroll">
+    <table class="history-table" id="history-table">
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>Timestamp</th>
+          <th>Created</th>
+          <th>Skipped</th>
+          <th>Errors</th>
+          <th>Status</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody id="history-tbody">
+        <!-- Populated by dashboard.js from /api/history -->
+      </tbody>
+    </table>
+  </div>
+
+</section><!-- /#history-panel -->
+
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  PANEL 5 — CONFLICT INSPECTOR MODAL (hidden by default)             ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<div id="conflict-modal"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="modal-title"
+     aria-hidden="true">
+
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+
+  <div class="modal-content">
+
+    <!-- Modal Header -->
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-title">Conflict Inspector</div>
+        <div class="modal-handle" id="modal-handle">y2k-my-melody-grip</div>
+      </div>
+      <button class="modal-close" id="modal-close" aria-label="Close conflict inspector">✕</button>
+    </div>
+
+    <!-- Modal Body — side-by-side diff -->
+    <div class="modal-body" id="modal-body">
+
+      <div class="diff-col-labels">
+        <div class="diff-col-label etsy">Etsy CSV — incoming</div>
+        <div class="diff-col-label shopify">Shopify Live — current</div>
+      </div>
+
+      <div class="diff-grid" id="diff-grid">
+
+        <!-- ── LEFT: Etsy CSV ── -->
+        <div class="diff-pane" id="diff-etsy">
+          <div class="diff-field same">
+            <div class="diff-field-key">Title</div>
+            <div class="diff-field-value">My Melody Y2K Grip Case</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Base Price</div>
+            <div class="diff-field-value">HK$ 95.00</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Variants</div>
+            <div class="diff-field-value">42 (6 models × 7 styles)</div>
+          </div>
+          <div class="diff-field added">
+            <div class="diff-field-key">Style: Case+Grip+Charm</div>
+            <div class="diff-field-value">HK$ 165.00 — new tier</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Status</div>
+            <div class="diff-field-value">DRAFT</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Vendor</div>
+            <div class="diff-field-value">Y2KASE</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Images</div>
+            <div class="diff-field-value">5 images (3 new)</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Product Type</div>
+            <div class="diff-field-value">Phone Case</div>
+          </div>
+        </div>
+
+        <!-- ── RIGHT: Shopify Live ── -->
+        <div class="diff-pane" id="diff-shopify">
+          <div class="diff-field same">
+            <div class="diff-field-key">Title</div>
+            <div class="diff-field-value">My Melody Y2K Grip Case</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Base Price</div>
+            <div class="diff-field-value">HK$ 85.00</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Variants</div>
+            <div class="diff-field-value">36 (6 models × 6 styles)</div>
+          </div>
+          <div class="diff-field missing">
+            <div class="diff-field-key">Style: Case+Grip+Charm</div>
+            <div class="diff-field-value">— (not present)</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Status</div>
+            <div class="diff-field-value">DRAFT</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Vendor</div>
+            <div class="diff-field-value">Y2KASE</div>
+          </div>
+          <div class="diff-field changed">
+            <div class="diff-field-key">Images</div>
+            <div class="diff-field-value">3 images</div>
+          </div>
+          <div class="diff-field same">
+            <div class="diff-field-key">Product Type</div>
+            <div class="diff-field-value">Phone Case</div>
+          </div>
+        </div>
+
+      </div><!-- /.diff-grid -->
+    </div><!-- /.modal-body -->
+
+    <!-- Modal Footer -->
+    <div class="modal-footer">
+      <span class="modal-footer-note" id="modal-conflict-count">
+        3 field conflicts detected · Overwrite replaces the live Shopify product.
+      </span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" id="btn-modal-skip">Skip</button>
+        <button class="btn btn-danger" id="btn-modal-overwrite">Acknowledge &amp; Select</button>
+      </div>
+    </div>
+
+  </div><!-- /.modal-content -->
+</div><!-- /#conflict-modal -->
+
+
+<script src="dashboard.js"></script>
+
+</body>
+</html>
