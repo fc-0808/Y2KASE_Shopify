@@ -709,6 +709,276 @@ table.history-table tbody tr:last-child td { border-bottom: none; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── THUMBNAIL COLUMN ────────────────────────────────────────────────────── */
+.col-img { width: 52px; }
+
+.thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.thumb-placeholder {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 5px;
+  border: 1px dashed var(--border);
+  background: var(--panel);
+}
+
+/* ── VARIANT BADGE (table cell) ──────────────────────────────────────────── */
+.variant-badge {
+  display: inline-block;
+  font: 600 11px var(--font-mono);
+  background: var(--badge-new-bg);
+  color: var(--badge-new-text);
+  border: 1px solid var(--badge-new-border);
+  border-radius: 20px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.variant-math {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+/* ── VISUAL SPLIT PANE (modal section 1) ─────────────────────────────────── */
+.visual-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 260px;
+  border-bottom: 1px solid var(--border);
+}
+
+.split-pane {
+  padding: 16px 18px;
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.before-pane {
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--diff-removed) 20%, var(--bg));
+}
+
+.after-pane {
+  background: color-mix(in srgb, var(--diff-added) 10%, var(--bg));
+}
+
+.split-pane-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+/* ── BEFORE pane elements ────────────────────────────────────────────────── */
+.before-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.before-section-label:first-of-type { margin-top: 0; }
+
+.before-count {
+  font-weight: 400;
+  opacity: .7;
+}
+
+.before-raw-title {
+  font: 400 11px/1.5 var(--font-mono);
+  color: var(--text-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 9px;
+  max-height: 58px;
+  overflow-y: auto;
+  word-break: break-word;
+  margin-bottom: 2px;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 2px;
+  min-height: 20px;
+}
+
+.chip {
+  font: 400 10px/1.6 var(--font-mono);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1px 8px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip-list-tags .chip {
+  font-size: 9px;
+  opacity: .75;
+}
+
+/* ── AFTER pane elements ─────────────────────────────────────────────────── */
+.after-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.inspector-img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.inspector-img-placeholder {
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.after-title-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.after-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.after-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.after-meta-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 76px;
+  flex-shrink: 0;
+}
+
+.variant-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--badge-new-bg);
+  color: var(--badge-new-text);
+  border: 1px solid var(--badge-new-border);
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.variant-count-badge small {
+  font-weight: 400;
+  opacity: .75;
+}
+
+.sku-sample {
+  font: 500 11px var(--font-mono);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+}
+
+/* ── DIFF DETAILS (collapsible section 2) ────────────────────────────────── */
+.diff-details {
+  border-top: 1px solid var(--border);
+}
+
+.diff-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 18px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+  gap: 8px;
+}
+
+.diff-summary::-webkit-details-marker { display: none; }
+
+.diff-summary::before {
+  content: '▶';
+  font-size: 8px;
+  margin-right: 5px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.diff-details[open] .diff-summary::before {
+  transform: rotate(90deg);
+}
+
+.diff-badge {
+  background: var(--badge-conflict-bg);
+  color: var(--badge-conflict-text);
+  border: 1px solid var(--badge-conflict-border);
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.diff-badge.no-diffs {
+  background: var(--badge-match-bg);
+  color: var(--badge-match-text);
+  border-color: var(--badge-match-border);
+}
+
 /* ── AUDIT TABLE FILTER ──────────────────────────────────────────────────── */
 /* When a filter class is set on the table, hide non-matching body rows.      */
 #audit-table.filter-new      tbody tr:not([data-status="new"])      { display: none; }
@@ -736,3 +1006,134 @@ table.audit-table tbody tr.row-imported td {
 
 /* ── UTILITY ─────────────────────────────────────────────────────────────── */
 [hidden] { display: none !important; }
+
+/* ── AFTER-PANE LAYOUT ADJUSTMENTS ──────────────────────────────────────── */
+/* Image slot is a flex-shrink:0 container; title-wrap fills the remainder.  */
+.after-img-slot  { flex-shrink: 0; }
+.after-title-wrap { flex: 1; min-width: 0; }
+
+/* ── OVERRIDE INPUTS (editable fields in the Shopify After pane) ─────────── */
+.override-field-label {
+  font: 600 9px/1 var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.override-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 500 13px/1.4 var(--font-ui);
+  padding: 6px 9px;
+  outline: none;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+
+.override-input:hover {
+  border-color: var(--muted);
+  background: color-mix(in srgb, var(--panel-hover) 70%, var(--bg));
+}
+
+.override-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  background: var(--panel);
+}
+
+.override-input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Inline variant inside a meta row — takes remaining horizontal space */
+.override-input-inline {
+  display: inline-block;
+  flex: 1;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* Price field — fixed narrow width, monospace, right-aligned */
+.override-price-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.override-price-prefix {
+  font: 600 11px var(--font-mono);
+  color: var(--muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.override-input-price {
+  display: inline-block;
+  width: 84px;
+  font: 500 12px/1 var(--font-mono);
+  padding: 4px 8px;
+  text-align: right;
+  letter-spacing: .02em;
+}
+
+/* ── SAVE OVERRIDES BUTTON ───────────────────────────────────────────────── */
+/* Accent-tinted ghost variant — visually distinct from the plain Skip ghost. */
+.btn-accent-ghost {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+.btn-accent-ghost:not(:disabled):hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+/* ── FALLBACK BADGE ──────────────────────────────────────────────────────── */
+/* Shown in the After-pane header when Phase 1 smart-fallbacks fired.        */
+.fallback-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font: 600 9px/1 var(--font-ui);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--status-warn) 14%, transparent);
+  color: var(--status-warn);
+  border: 1px solid color-mix(in srgb, var(--status-warn) 32%, transparent);
+  cursor: help;
+  margin-left: 7px;
+  vertical-align: middle;
+  animation: fallback-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes fallback-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .65; }
+}
+
+/* Compact inline version rendered inside audit table title cells.           */
+.fallback-badge-inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 20px;
+  font: 600 9px/1.4 var(--font-ui);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--status-warn) 11%, transparent);
+  color: var(--status-warn);
+  border: 1px solid color-mix(in srgb, var(--status-warn) 26%, transparent);
+  margin-left: 6px;
+  vertical-align: middle;
+  cursor: help;
+  white-space: nowrap;
+}

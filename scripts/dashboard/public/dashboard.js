@@ -89,16 +89,48 @@ function cacheDOM() {
     historyCount:     $('history-count'),
     historyTbody:     $('history-tbody'),
 
-    // Modal
+    // Modal — static chrome
     modal:            $('conflict-modal'),
     modalBackdrop:    $('modal-backdrop'),
     modalHandle:      $('modal-handle'),
     modalClose:       $('modal-close'),
     modalConflictNote:$('modal-conflict-count'),
-    diffEtsy:         $('diff-etsy'),
-    diffShopify:      $('diff-shopify'),
     btnModalSkip:     $('btn-modal-skip'),
     btnModalAck:      $('btn-modal-overwrite'),
+
+    // Modal — Before pane (Etsy Original)
+    beforeRawTitle:   $('before-raw-title'),
+    beforeModels:     $('before-models'),
+    beforeStyles:     $('before-styles'),
+    beforeTags:       $('before-tags'),
+    beforeModelCount: $('before-model-count'),
+    beforeStyleCount: $('before-style-count'),
+
+    // Modal — After pane static containers (still referenced for future use)
+    afterHero:        $('after-hero'),
+    afterMeta:        $('after-meta'),
+
+    // Modal — After pane editable override inputs
+    overrideTitle:       $('override-title'),
+    overrideProductType: $('override-product-type'),
+    overrideBasePrice:   $('override-base-price'),
+
+    // Modal — After pane read-only display elements
+    afterImgSlot:     $('after-img-slot'),
+    afterVariantBadge:$('after-variant-badge'),
+    afterSkuSample:   $('after-sku-sample'),
+
+    // Modal — Fallback badge in pane header
+    fallbackBadge:    $('fallback-badge'),
+
+    // Modal — Save Overrides button
+    btnSaveOverrides: $('btn-save-overrides'),
+
+    // Modal — Field diff (collapsible)
+    diffDetails:      $('diff-details'),
+    diffBadge:        $('diff-badge'),
+    diffEtsy:         $('diff-etsy'),
+    diffShopify:      $('diff-shopify'),
   };
 }
 
@@ -246,7 +278,7 @@ async function loadPreview() {
 }
 
 function emptyState(icon, title, body) {
-  return `<tr><td colspan="7">
+  return `<tr><td colspan="8">
     <div class="empty-state">
       <div class="empty-icon">${icon}</div>
       <div class="empty-title">${title}</div>
@@ -300,24 +332,41 @@ function renderRow(p) {
   const badgeClass = isNew ? 'badge-new' : isConflict ? 'badge-conflict' : 'badge-match';
   const badgeLabel = isNew ? 'New'       : isConflict ? 'Conflict'       : 'Match';
 
-  // Show price as single value or min–max range
+  // Price: single value or min–max range
   const pMin = Math.round(p.priceMin ?? 0);
   const pMax = Math.round(p.priceMax ?? 0);
   const priceDisplay = pMin === pMax ? `HK$${pMin}` : `HK$${pMin}–${pMax}`;
+
+  // Thumbnail — graceful no-image fallback
+  const imgCell = p.imageUrl
+    ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.title)}" class="thumb" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'thumb-placeholder'}))">`
+    : '<span class="thumb-placeholder"></span>';
+
+  // Variant badge: count + dynamic breakdown when both dimensions are known
+  const variantCell = p.modelCount && p.styleCount
+    ? `<span class="variant-badge">${p.variantCount}</span>
+       <small class="variant-math">${p.modelCount}×${p.styleCount}</small>`
+    : `<span class="variant-badge">${p.variantCount}</span>`;
 
   const actionCell = isConflict
     ? `<button class="btn btn-ghost btn-sm btn-inspect" data-handle="${esc(p.handle)}" aria-label="Inspect conflict">Inspect</button>`
     : '';
 
+  // Phase 1 fallback indicator — shown when smart defaults were applied
+  const fallbackHtml = Array.isArray(p.fallbacksApplied) && p.fallbacksApplied.length
+    ? `<span class="fallback-badge-inline" title="Auto-filled by smart fallback: ${esc(p.fallbacksApplied.join(', '))}">⚠ Fallback</span>`
+    : '';
+
   return `
     <tr data-status="${p.status}" data-handle="${esc(p.handle)}" class="${rowClass}">
+      <td class="col-img">${imgCell}</td>
       <td class="col-check">
         <input type="checkbox" class="row-check" data-handle="${esc(p.handle)}" ${checked} ${disabled}>
       </td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
-      <td title="${esc(p.etsy?.title ?? p.title)}">${esc(p.title)}</td>
+      <td title="${esc(p.etsyTitle ?? p.title)}">${esc(p.title)}${fallbackHtml}</td>
       <td class="col-handle"><span class="handle">${esc(p.handle)}</span></td>
-      <td class="col-variants">${p.variantCount}</td>
+      <td class="col-variants">${variantCell}</td>
       <td class="col-price">${esc(priceDisplay)}</td>
       <td>${actionCell}</td>
     </tr>`;
@@ -372,15 +421,26 @@ function openModal(handle) {
   app.activeHandle = handle;
   D.modalHandle.textContent = handle;
 
-  // Footer note
+  // Footer conflict note
   const n = product.diffs?.length ?? 0;
   D.modalConflictNote.textContent = product.shopify
     ? `${n} field conflict${n !== 1 ? 's' : ''} detected · Overwriting replaces the live Shopify product.`
-    : 'This product does not yet exist in Shopify — nothing to conflict with.';
+    : 'This product does not yet exist in Shopify yet.';
 
-  // Render both diff panes from preview data
+  // ── Section 1: Visual Before/After split ──────────────────────────────────
+  renderBeforePane(product);
+  renderAfterPane(product);
+
+  // ── Section 2: Collapsible field diff ─────────────────────────────────────
   renderDiffPane(D.diffEtsy,    product.etsy,    product.diffs);
   renderDiffPane(D.diffShopify, product.shopify, product.diffs);
+
+  // Diff badge: count + colour
+  D.diffBadge.textContent = n === 0 ? '0 changes' : `${n} change${n !== 1 ? 's' : ''}`;
+  D.diffBadge.classList.toggle('no-diffs', n === 0);
+
+  // Auto-open the diff section when there are conflicts; collapse when clean
+  if (D.diffDetails) D.diffDetails.open = n > 0;
 
   D.modal.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
@@ -393,13 +453,86 @@ function closeModal() {
   app.activeHandle = null;
 }
 
+/** Populate the LEFT "Etsy Original" pane. */
+function renderBeforePane(product) {
+  // Keyword-stuffed raw title
+  D.beforeRawTitle.textContent = product.etsyTitle ?? product.title;
+
+  // Model and style chip counts
+  const mc = product.etsyModels?.length ?? 0;
+  const sc = product.etsyStyles?.length ?? 0;
+  if (D.beforeModelCount) D.beforeModelCount.textContent = mc ? `(${mc})` : '';
+  if (D.beforeStyleCount) D.beforeStyleCount.textContent = sc ? `(${sc})` : '';
+
+  // Chip lists
+  const chips = (arr, maxChips = 20) =>
+    (arr ?? []).slice(0, maxChips)
+      .map(v => `<span class="chip" title="${esc(v)}">${esc(v)}</span>`)
+      .join('');
+
+  D.beforeModels.innerHTML = chips(product.etsyModels);
+  D.beforeStyles.innerHTML = chips(product.etsyStyles);
+  D.beforeTags.innerHTML   = chips(product.etsyTags, 30);
+}
+
+/** Populate the RIGHT "Shopify Preview" pane.
+ *
+ * Now operates entirely via direct property mutation on pre-rendered static
+ * elements — no innerHTML injection.  This lets the editable <input> elements
+ * retain their values and event listeners across repeated openModal() calls.
+ */
+function renderAfterPane(product) {
+  // ── Image slot ────────────────────────────────────────────────────────────
+  if (product.imageUrl) {
+    const img    = document.createElement('img');
+    img.src      = product.imageUrl;
+    img.className = 'inspector-img';
+    img.alt      = product.title;
+    img.loading  = 'lazy';
+    img.addEventListener('error', () => {
+      const ph = document.createElement('div');
+      ph.className   = 'inspector-img-placeholder';
+      ph.textContent = '🖼';
+      img.replaceWith(ph);
+    });
+    D.afterImgSlot.replaceChildren(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className   = 'inspector-img-placeholder';
+    ph.textContent = '🖼';
+    D.afterImgSlot.replaceChildren(ph);
+  }
+
+  // ── Editable override fields — seed from current in-memory values ─────────
+  D.overrideTitle.value       = product.title;
+  D.overrideProductType.value = product.collection ?? '';
+  D.overrideBasePrice.value   = (product.priceMin ?? 0).toFixed(2);
+
+  // ── Read-only display fields ───────────────────────────────────────────────
+  if (product.modelCount && product.styleCount) {
+    D.afterVariantBadge.innerHTML =
+      `${product.variantCount} <small>${product.modelCount}×${product.styleCount}</small>`;
+  } else {
+    D.afterVariantBadge.textContent = String(product.variantCount ?? '—');
+  }
+  D.afterSkuSample.textContent = product.sampleSku ?? '—';
+
+  // ── Fallback badge (Phase 1 smart-fallback indicator) ─────────────────────
+  const hasFallbacks = Array.isArray(product.fallbacksApplied) && product.fallbacksApplied.length > 0;
+  D.fallbackBadge.hidden = !hasFallbacks;
+  if (hasFallbacks) {
+    D.fallbackBadge.textContent = '⚠ Fallback Active';
+    D.fallbackBadge.title = `Auto-filled by smart fallback: ${product.fallbacksApplied.join(', ')}`;
+  }
+}
+
 /**
- * Render a single diff pane (Etsy or Shopify side).
+ * Render one side of the collapsible field diff.
  *
  * Field CSS state:
  *   same    — field is identical on both sides
- *   changed — field is in the diffs array (value differs)
- *   missing — summary is null (this side has no product data)
+ *   changed — field appears in the diffs array
+ *   missing — summary is null (side has no live Shopify data)
  */
 function renderDiffPane(paneEl, summary, diffs = []) {
   if (!paneEl) return;
@@ -418,12 +551,131 @@ function renderDiffPane(paneEl, summary, diffs = []) {
   }).join('');
 }
 
+// ── Override helpers ──────────────────────────────────────────────────────────
+
 /**
- * "Acknowledge & Select": marks the conflict product's row checkbox as checked
- * so it can be included in the next import run, then closes the modal.
+ * Core data-binding function: reads the three editable inputs, diffs them
+ * against the current productMap entry, writes any changes back to
+ * app.productMap + app.products[], updates the audit table row, and fires a
+ * fire-and-forget POST to /api/product/:handle/override so the server-side
+ * cache reflects the edits before the import stream runs.
+ *
+ * @param {string} handle
+ * @returns {object|null} The patch object that was applied, or null if nothing changed.
+ */
+function commitOverrides(handle) {
+  const product = app.productMap.get(handle);
+  if (!product) return null;
+
+  const newTitle       = D.overrideTitle.value.trim();
+  const newProductType = D.overrideProductType.value.trim();
+  const newBasePrice   = parseFloat(D.overrideBasePrice.value);
+
+  // Build a diff patch — only include fields that actually changed
+  const patch = {};
+  if (newTitle       && newTitle !== product.title)                              patch.title       = newTitle;
+  if (newProductType && newProductType !== product.collection)                   patch.productType = newProductType;
+  if (!isNaN(newBasePrice) && newBasePrice > 0 &&
+      Math.abs(newBasePrice - (product.priceMin ?? 0)) > 0.005)                 patch.basePrice   = newBasePrice;
+
+  if (!Object.keys(patch).length) return null; // nothing changed
+
+  // ── 1. Update client-side productMap (synchronous) ─────────────────────
+  const updated = { ...product };
+  if (patch.title)       updated.title      = patch.title;
+  if (patch.productType) updated.collection = patch.productType;
+  if (patch.basePrice != null) {
+    const oldMin = product.priceMin ?? 0;
+    const oldMax = product.priceMax ?? 0;
+    if (oldMin > 0) {
+      const scale      = patch.basePrice / oldMin;
+      updated.priceMin = patch.basePrice;
+      updated.priceMax = parseFloat((oldMax * scale).toFixed(2));
+    }
+  }
+
+  app.productMap.set(handle, updated);
+
+  // Keep app.products array in sync so rerenders see the same values
+  const idx = app.products.findIndex(p => p.handle === handle);
+  if (idx !== -1) app.products[idx] = updated;
+
+  // ── 2. Reflect changes in the audit table row immediately ───────────────
+  updateRowFromOverride(handle, updated);
+
+  // ── 3. Push patch to server (fire-and-forget) ───────────────────────────
+  // The server patches _cache.payloadMap so the next SSE import run uses
+  // the edited data, not the original CSV-derived payload.
+  fetchJson(`/api/product/${encodeURIComponent(handle)}/override`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(patch),
+  })
+    .then(() => addLogLine('success', '✓', `Override applied: ${handle}`, handle))
+    .catch(err => addLogLine('error', '✗', `Override POST failed: ${err.message}`, handle));
+
+  return patch;
+}
+
+/**
+ * Reflect edited title and price from an override into the visible audit
+ * table row, preserving any inline fallback badge already in the title cell.
+ */
+function updateRowFromOverride(handle, product) {
+  const row = D.auditTbody.querySelector(`tr[data-handle="${CSS.escape(handle)}"]`);
+  if (!row) return;
+
+  // cells[3] = Title column
+  const titleCell = row.cells[3];
+  if (titleCell) {
+    const existingBadge = titleCell.querySelector('.fallback-badge-inline');
+    titleCell.textContent = product.title;        // clears children
+    if (existingBadge) titleCell.appendChild(existingBadge);
+    titleCell.title = product.etsyTitle ?? product.title;
+  }
+
+  // cells[6] = Price column
+  const priceCell = row.cells[6];
+  if (priceCell) {
+    const pMin = Math.round(product.priceMin ?? 0);
+    const pMax = Math.round(product.priceMax ?? 0);
+    priceCell.textContent = pMin === pMax ? `HK$${pMin}` : `HK$${pMin}–${pMax}`;
+  }
+}
+
+/**
+ * Temporarily replace a button's label to give visual feedback, then restore.
+ */
+function flashButton(btn, label, durationMs = 1800) {
+  if (!btn) return;
+  const original = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, durationMs);
+}
+
+/**
+ * "Save Overrides": persist the edited fields and flash confirmation.
+ * Called by the dedicated "Save Overrides" button.
+ */
+function saveOverrides() {
+  const handle = app.activeHandle;
+  if (!handle) return;
+  const patch = commitOverrides(handle);
+  flashButton(D.btnSaveOverrides, patch ? 'Saved ✓' : 'No changes');
+}
+
+/**
+ * "Acknowledge & Select": silently commit any pending overrides, mark the
+ * conflict row's checkbox as checked, then close the modal.
  */
 function acknowledgeAndSelect() {
   const handle = app.activeHandle;
+  if (handle) commitOverrides(handle); // silently apply edits before closing
+
   if (!handle) { closeModal(); return; }
 
   const cb = D.auditTbody.querySelector(`.row-check[data-handle="${CSS.escape(handle)}"]`);
@@ -745,6 +997,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   D.modalBackdrop.addEventListener('click', closeModal);
   D.btnModalSkip.addEventListener('click', closeModal);
   D.btnModalAck.addEventListener('click', acknowledgeAndSelect);
+  D.btnSaveOverrides?.addEventListener('click', saveOverrides);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
   // ── Bootstrap sequence ─────────────────────────────────────────────────────

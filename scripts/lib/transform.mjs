@@ -19,6 +19,43 @@
 import { classifyProduct }                  from '../taxonomy/classifier.mjs';
 import { generateTitle, needsTitleRewrite } from '../taxonomy/title-generator.mjs';
 
+// ── Smart-fallback constants ───────────────────────────────────────────────────
+// Used when Etsy variation columns are absent or unrecognised.
+
+/**
+ * Canonical 6-bundle style list.
+ * Triggered when the raw Etsy title signals a MagSafe listing but the
+ * VARIATION 2 VALUES column is empty or contains only unrecognised values.
+ */
+const MAGSAFE_STYLES_FALLBACK = [
+  'Case+Grip+Charm',
+  'Case+Grip',
+  'Case+Charm',
+  'Case Only',
+  'Grip Only',
+  'Charm Only',
+];
+
+/**
+ * Standard 12-model iPhone lineup used as the Models fallback when
+ * VARIATION 1 VALUES is completely empty.
+ * Mirrors the authoritative MODEL_SKU_CODE keys (defined below).
+ */
+const MODELS_FALLBACK = [
+  'iPhone 17 Pro Max',
+  'iPhone 17 Pro',
+  'iPhone 17',
+  'iPhone 16 Pro Max',
+  'iPhone 16 Pro',
+  'iPhone 16',
+  'iPhone 15 Pro Max',
+  'iPhone 15 Pro',
+  'iPhone 15',
+  'iPhone 14 Pro Max',
+  'iPhone 14 Pro',
+  'iPhone 14/13',
+];
+
 // ── Price matrix ──────────────────────────────────────────────────────────────
 // Authoritative per-bundle prices (HKD).
 // Applied when the style string does NOT embed a price in parentheses.
@@ -287,6 +324,71 @@ function buildMetafields(etsyProduct, shopifyTitle) {
 }
 
 /**
+ * Determine whether a styles array is "generic" — i.e. it is either empty or
+ * every entry fails to match any key in STYLE_PRICES after stripping an
+ * embedded-price suffix.  Generic arrays do not contribute useful Cartesian
+ * data and are safe to replace with a smart fallback.
+ *
+ * @param {string[]} styles
+ * @returns {boolean}
+ */
+function isGenericStyles(styles) {
+  if (styles.length === 0) return true;
+  return styles.every(raw => {
+    const match = raw.match(EMBEDDED_PRICE_RE);
+    const name  = match ? match[1].trim() : raw.trim();
+    return !(name in STYLE_PRICES);
+  });
+}
+
+/**
+ * Apply smart-fallback rules to a normalised EtsyProduct and return a
+ * patched copy.  The original object is never mutated.
+ *
+ * Rule 1 — MagSafe style override
+ *   Condition: styles are empty/generic AND the raw Etsy title matches
+ *              /magsafe/i or /max\s*save/i
+ *   Action:    Replace styles with MAGSAFE_STYLES_FALLBACK (6 canonical bundles)
+ *
+ * Rule 2 — Model fallback
+ *   Condition: models array is empty
+ *   Action:    Replace models with MODELS_FALLBACK (top 12 iPhone lineup)
+ *
+ * Both rules are independent and may fire together.
+ *
+ * @param {import('../lib/normalize.mjs').EtsyProduct} product
+ * @returns {{ product: EtsyProduct, fallbacksApplied: string[] }}
+ */
+function resolveVariations(product) {
+  const fallbacksApplied = [];
+
+  let { models, styles } = product;
+
+  // Rule 1: MagSafe / "max save" title → canonical 6-bundle styles
+  if (isGenericStyles(styles) && /magsafe|max\s*save/i.test(product.title)) {
+    console.info(
+      `  [FALLBACK] Styles → MagSafe 6-bundle set  (title: "${product.title.slice(0, 60)}…")`
+    );
+    styles = MAGSAFE_STYLES_FALLBACK;
+    fallbacksApplied.push('styles:magsafe');
+  }
+
+  // Rule 2: Missing models → standard 12-model lineup
+  if (models.length === 0) {
+    console.info(
+      `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 60)}…")`
+    );
+    models = MODELS_FALLBACK;
+    fallbacksApplied.push('models:default');
+  }
+
+  return {
+    product:          { ...product, models, styles },
+    fallbacksApplied,
+  };
+}
+
+/**
  * Build the Cartesian variant matrix: every unique (model × style) combination.
  *
  * Each variant receives:
@@ -350,27 +452,31 @@ function buildVariants(etsyProduct, classification) {
  *  _meta          — debug/audit info (etsyTitle, classification, variantCount)
  */
 export function buildShopifyPayload(etsyProduct) {
+  // ── Step 0: Smart-fallback resolution ─────────────────────────────────────
+  // Patch missing / unrecognised variation data before any downstream work.
+  const { product: p, fallbacksApplied } = resolveVariations(etsyProduct);
+
   // ── Step 1: Classify ───────────────────────────────────────────────────────
   const classification = classifyProduct({
-    title:    etsyProduct.title,
+    title:    p.title,
     // Normalise tag underscores before passing to classifier — it does string matching
-    tags:     etsyProduct.tags.map(t => t.replace(/_/g, ' ')).join(', '),
-    variants: etsyProduct.models.map(m => ({ title: m })),
+    tags:     p.tags.map(t => t.replace(/_/g, ' ')).join(', '),
+    variants: p.models.map(m => ({ title: m })),
   });
 
   // ── Step 2: Title rewrite ──────────────────────────────────────────────────
-  const shopifyTitle = needsTitleRewrite(etsyProduct.title)
+  const shopifyTitle = needsTitleRewrite(p.title)
     ? generateTitle(classification)
-    : etsyProduct.title;
+    : p.title;
 
   // ── Step 3: Variant matrix ─────────────────────────────────────────────────
-  const variants = buildVariants(etsyProduct, classification);
+  const variants = buildVariants(p, classification);
 
   // ── Step 4: Deduplicated style option values (strip any embedded price text)
   const styleOptionValues = [
     ...new Map(
-      etsyProduct.styles.map(s => {
-        const { styleName } = parseStyleAndPrice(s, etsyProduct.price);
+      p.styles.map(s => {
+        const { styleName } = parseStyleAndPrice(s, p.price);
         return [styleName, { name: styleName }];
       })
     ).values(),
@@ -380,7 +486,7 @@ export function buildShopifyPayload(etsyProduct) {
   return {
     // ── Fields sent to productSet mutation ────────────────────────────────────
     title:           shopifyTitle,
-    descriptionHtml: descToHtml(etsyProduct.description),
+    descriptionHtml: descToHtml(p.description),
     handle:          slugify(shopifyTitle),
     vendor:          'Y2KASE',
     productType:     classification.shopifyProductType,
@@ -392,12 +498,12 @@ export function buildShopifyPayload(etsyProduct) {
       description: buildSeoDescription(shopifyTitle, classification),
     },
 
-    metafields: buildMetafields(etsyProduct, shopifyTitle),
+    metafields: buildMetafields(p, shopifyTitle),
 
     productOptions: [
       {
         name:   'Phone Model',
-        values: etsyProduct.models.map(m => ({ name: m })),
+        values: p.models.map(m => ({ name: m })),
       },
       {
         name:   'Style',
@@ -410,19 +516,21 @@ export function buildShopifyPayload(etsyProduct) {
     // ── Phase 4 pipeline metadata (not in ProductSetInput) ───────────────────
 
     // Image URLs to push via productCreateMedia after the product is created
-    _images: etsyProduct.images.map((src, i) => ({
+    _images: p.images.map((src, i) => ({
       src,
       alt:      shopifyTitle,
       position: i + 1,
     })),
 
     // Stock quantity — applied via inventorySetOnHandQuantities after creation
-    _inventoryQty: Math.max(etsyProduct.quantity || 0, 3),
+    _inventoryQty: Math.max(p.quantity || 0, 3),
 
     // Audit metadata — useful for dry-run display and post-import reports
     _meta: {
-      etsyTitle:    etsyProduct.title,
-      variantCount: variants.length,
+      etsyTitle:       p.title,
+      variantCount:    variants.length,
+      // Non-empty when one or both smart-fallback rules fired for this product
+      fallbacksApplied: fallbacksApplied.length ? fallbacksApplied : undefined,
       classification: {
         productType: classification.productType,
         deviceBrand: classification.deviceBrand,

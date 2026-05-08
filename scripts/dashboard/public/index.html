@@ -92,6 +92,7 @@
     <div class="table-wrap" id="table-wrap">
       <table class="audit-table" id="audit-table">
         <colgroup>
+          <col class="col-img">
           <col class="col-check">
           <col class="col-status">
           <col class="col-title">
@@ -102,13 +103,14 @@
         </colgroup>
         <thead>
           <tr>
+            <th class="col-img"></th>
             <th class="col-check">
               <input type="checkbox" id="chk-master" title="Select / deselect all importable rows">
             </th>
             <th class="col-status">Status</th>
             <th class="col-title">Title</th>
             <th class="col-handle">Handle</th>
-            <th class="col-variants" title="Variant count">Vars</th>
+            <th class="col-variants" title="Variant count">Variants</th>
             <th class="col-price">Price</th>
             <th class="col-action"></th>
           </tr>
@@ -227,89 +229,116 @@
       <button class="modal-close" id="modal-close" aria-label="Close conflict inspector">✕</button>
     </div>
 
-    <!-- Modal Body — side-by-side diff -->
+    <!-- Modal Body -->
     <div class="modal-body" id="modal-body">
 
-      <div class="diff-col-labels">
-        <div class="diff-col-label etsy">Etsy CSV — incoming</div>
-        <div class="diff-col-label shopify">Shopify Live — current</div>
-      </div>
+      <!-- ── SECTION 1: Before & After visual split ───────────────────────── -->
+      <div class="visual-split">
 
-      <div class="diff-grid" id="diff-grid">
+        <!-- LEFT — Etsy Original -->
+        <div class="split-pane before-pane">
+          <div class="split-pane-label">Etsy CSV — Original</div>
 
-        <!-- ── LEFT: Etsy CSV ── -->
-        <div class="diff-pane" id="diff-etsy">
-          <div class="diff-field same">
-            <div class="diff-field-key">Title</div>
-            <div class="diff-field-value">My Melody Y2K Grip Case</div>
-          </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Base Price</div>
-            <div class="diff-field-value">HK$ 95.00</div>
-          </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Variants</div>
-            <div class="diff-field-value">42 (6 models × 7 styles)</div>
-          </div>
-          <div class="diff-field added">
-            <div class="diff-field-key">Style: Case+Grip+Charm</div>
-            <div class="diff-field-value">HK$ 165.00 — new tier</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Status</div>
-            <div class="diff-field-value">DRAFT</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Vendor</div>
-            <div class="diff-field-value">Y2KASE</div>
-          </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Images</div>
-            <div class="diff-field-value">5 images (3 new)</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Product Type</div>
-            <div class="diff-field-value">Phone Case</div>
-          </div>
+          <div class="before-section-label">Keyword Title</div>
+          <div class="before-raw-title" id="before-raw-title"></div>
+
+          <div class="before-section-label">Phone Models <span class="before-count" id="before-model-count"></span></div>
+          <div class="chip-list" id="before-models"></div>
+
+          <div class="before-section-label">Style Bundles <span class="before-count" id="before-style-count"></span></div>
+          <div class="chip-list" id="before-styles"></div>
+
+          <div class="before-section-label">Tags</div>
+          <div class="chip-list chip-list-tags" id="before-tags"></div>
         </div>
 
-        <!-- ── RIGHT: Shopify Live ── -->
-        <div class="diff-pane" id="diff-shopify">
-          <div class="diff-field same">
-            <div class="diff-field-key">Title</div>
-            <div class="diff-field-value">My Melody Y2K Grip Case</div>
+        <!-- RIGHT — Shopify Preview (editable override fields) -->
+        <div class="split-pane after-pane">
+          <div class="split-pane-label">
+            Shopify — Generated
+            <!-- Shown when Phase 1 smart-fallbacks fired for this product -->
+            <span class="fallback-badge" id="fallback-badge" hidden></span>
           </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Base Price</div>
-            <div class="diff-field-value">HK$ 85.00</div>
+
+          <!-- Hero: thumbnail + editable title -->
+          <div class="after-hero" id="after-hero">
+            <div class="after-img-slot" id="after-img-slot"></div>
+            <div class="after-title-wrap">
+              <div class="override-field-label">Title</div>
+              <input type="text"
+                     id="override-title"
+                     class="override-input"
+                     placeholder="Shopify product title"
+                     autocomplete="off"
+                     spellcheck="false">
+            </div>
           </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Variants</div>
-            <div class="diff-field-value">36 (6 models × 6 styles)</div>
-          </div>
-          <div class="diff-field missing">
-            <div class="diff-field-key">Style: Case+Grip+Charm</div>
-            <div class="diff-field-value">— (not present)</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Status</div>
-            <div class="diff-field-value">DRAFT</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Vendor</div>
-            <div class="diff-field-value">Y2KASE</div>
-          </div>
-          <div class="diff-field changed">
-            <div class="diff-field-key">Images</div>
-            <div class="diff-field-value">3 images</div>
-          </div>
-          <div class="diff-field same">
-            <div class="diff-field-key">Product Type</div>
-            <div class="diff-field-value">Phone Case</div>
-          </div>
+
+          <!-- Meta rows: editable Collection + Base Price; read-only Variants, SKU, Status -->
+          <div class="after-meta" id="after-meta">
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Collection</span>
+              <input type="text"
+                     id="override-product-type"
+                     class="override-input override-input-inline"
+                     placeholder="Product type"
+                     autocomplete="off"
+                     spellcheck="false">
+            </div>
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Variants</span>
+              <span class="variant-count-badge" id="after-variant-badge">—</span>
+            </div>
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Base Price</span>
+              <div class="override-price-wrap">
+                <span class="override-price-prefix">HK$</span>
+                <input type="text"
+                       id="override-base-price"
+                       class="override-input override-input-price"
+                       placeholder="0.00"
+                       inputmode="decimal"
+                       autocomplete="off">
+              </div>
+            </div>
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Sample SKU</span>
+              <code class="sku-sample" id="after-sku-sample">—</code>
+            </div>
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Status</span>
+              <span>DRAFT</span>
+            </div>
+
+          </div><!-- /.after-meta -->
+        </div><!-- /.after-pane -->
+
+      </div><!-- /.visual-split -->
+
+      <!-- ── SECTION 2: Field diff — collapsible ──────────────────────────── -->
+      <details class="diff-details" id="diff-details">
+        <summary class="diff-summary">
+          <span>Field Diff</span>
+          <span class="diff-badge no-diffs" id="diff-badge">0 changes</span>
+        </summary>
+
+        <div class="diff-col-labels">
+          <div class="diff-col-label etsy">Etsy CSV — incoming</div>
+          <div class="diff-col-label shopify">Shopify Live — current</div>
         </div>
 
-      </div><!-- /.diff-grid -->
+        <div class="diff-grid" id="diff-grid">
+          <div class="diff-pane" id="diff-etsy"></div>
+          <div class="diff-pane" id="diff-shopify"></div>
+        </div>
+
+      </details>
+
     </div><!-- /.modal-body -->
 
     <!-- Modal Footer -->
@@ -319,6 +348,10 @@
       </span>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost" id="btn-modal-skip">Skip</button>
+        <button class="btn btn-ghost btn-accent-ghost" id="btn-save-overrides"
+                title="Persist the edited Title, Collection and Base Price into the import payload">
+          Save Overrides
+        </button>
         <button class="btn btn-danger" id="btn-modal-overwrite">Acknowledge &amp; Select</button>
       </div>
     </div>

@@ -202,8 +202,9 @@ async function buildPreview() {
 
     for await (const raw of parseCsvFile(CSV_PATH)) {
       const etsy = normalizeEtsyRecord(raw);
-      // Skip rows missing the minimum required fields for Shopify productSet
-      if (!etsy.title || !etsy.models.length || !etsy.styles.length) continue;
+      // Title is the only hard requirement — missing models/styles are handled
+      // by resolveVariations() (smart fallbacks) inside buildShopifyPayload().
+      if (!etsy.title) continue;
 
       let payload;
       try {
@@ -213,10 +214,14 @@ async function buildPreview() {
         continue;
       }
 
+      // Skip products that ended up with zero variants even after fallbacks
+      if (!payload.variants.length) continue;
+
       if (seen.has(payload.handle)) continue; // deduplicate by generated handle
       seen.add(payload.handle);
       payloadMap.set(payload.handle, payload);
-      ordered.push({ handle: payload.handle, payload, etsySku: etsy.etsySku });
+      // Preserve raw etsy fields alongside payload for preview enrichment
+      ordered.push({ handle: payload.handle, payload, etsySku: etsy.etsySku, etsy });
     }
 
     // ── 2. Batch-check Shopify for existing products ──────────────────────────
@@ -224,7 +229,7 @@ async function buildPreview() {
     const shopifyMap = await fetchShopifyProducts(handles);
 
     // ── 3. Compute diff for each product ─────────────────────────────────────
-    const results = ordered.map(({ handle, payload, etsySku }) => {
+    const results = ordered.map(({ handle, payload, etsySku, etsy }) => {
       const shopifyProduct = shopifyMap.get(handle) ?? null;
       const diff           = computeDiff(payload, shopifyProduct);
       const etsyPrices     = payload.variants.map(v => parseFloat(v.price));
@@ -234,10 +239,21 @@ async function buildPreview() {
         handle,
         title:        payload.title,
         etsySku:      etsySku || null,
-        variantCount: payload.variants.length,
+        variantCount:     payload.variants.length,  // dynamic: models.length × styles.length
+        modelCount:       etsy.models.length,        // raw VARIATION 1 VALUES count
+        styleCount:       etsy.styles.length,        // raw VARIATION 2 VALUES count
+        fallbacksApplied: payload._meta.fallbacksApplied ?? null,
         imageCount:   payload._images.length,
         priceMin:     Math.min(...etsyPrices),
         priceMax:     Math.max(...etsyPrices),
+        // Enriched fields for thumbnail column and Before/After inspector
+        imageUrl:     payload._images[0]?.src ?? null,
+        etsyTitle:    payload._meta.etsyTitle,
+        collection:   payload.productType,
+        sampleSku:    payload.variants[0]?.sku ?? null,
+        etsyModels:   etsy.models,
+        etsyStyles:   etsy.styles,
+        etsyTags:     etsy.tags,
         etsy:         diff.etsy,
         shopify:      diff.shopify,
         diffs:        diff.diffs,
@@ -432,9 +448,10 @@ app.get('/api/import/stream', async (req, res) => {
       for await (const raw of parseCsvFile(CSV_PATH)) {
         if (closed) break;
         const etsy = normalizeEtsyRecord(raw);
-        if (!etsy.title || !etsy.models.length || !etsy.styles.length) continue;
+        if (!etsy.title) continue; // fallbacks handle missing models/styles
         try {
           const payload = buildShopifyPayload(etsy);
+          if (!payload.variants.length) continue; // nothing to import
           if (needed.has(payload.handle) && !payloadMap.has(payload.handle)) {
             payloadMap.set(payload.handle, payload);
             if (payloadMap.size === needed.size) break; // early exit
@@ -620,6 +637,68 @@ app.get('/api/product/:handle', async (req, res) => {
     shopify: shopify
       ? { ...diff.shopify, id: shopify.id, tags: shopify.tags }
       : null,
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROUTE: POST /api/product/:handle/override
+//
+// Patches the in-memory preview cache for a given handle so that the NEXT
+// /api/import/stream call uses the user-edited values instead of the raw
+// CSV-derived payload.
+//
+// Body (all fields optional):
+//   { title?: string, productType?: string, basePrice?: number }
+//
+// basePrice is treated as the desired new MINIMUM variant price.  All variant
+// prices are rescaled proportionally to preserve the bundle price structure.
+//
+// Returns: { ok: true, handle, appliedTitle, appliedProductType }
+// ═══════════════════════════════════════════════════════════════════════════════
+app.post('/api/product/:handle/override', (req, res) => {
+  const { handle } = req.params;
+  const { title, productType, basePrice } = req.body ?? {};
+
+  const payload = _cache?.payloadMap?.get(handle) ?? null;
+  if (!payload) {
+    return res.status(404).json({
+      error: `Handle "${handle}" not found in cache — reload the preview first.`,
+    });
+  }
+
+  // Title override — also update SEO title; do NOT change handle (it's the map key)
+  if (typeof title === 'string' && title.trim()) {
+    const t = title.trim();
+    payload.title     = t;
+    payload.seo.title = t;
+  }
+
+  // Product type / collection override
+  if (typeof productType === 'string' && productType.trim()) {
+    payload.productType = productType.trim();
+  }
+
+  // Base-price override — scale all variant prices proportionally from the
+  // current minimum so the bundle pricing structure is preserved.
+  const price = parseFloat(basePrice);
+  if (!isNaN(price) && price > 0) {
+    const currentPrices = payload.variants.map(v => parseFloat(v.price));
+    const currentMin    = Math.min(...currentPrices);
+    if (currentMin > 0 && Math.abs(price - currentMin) > 0.005) {
+      const scale = price / currentMin;
+      for (const v of payload.variants) {
+        v.price = (parseFloat(v.price) * scale).toFixed(2);
+      }
+    }
+  }
+
+  payload._overriddenAt = new Date().toISOString();
+
+  res.json({
+    ok:                 true,
+    handle,
+    appliedTitle:       payload.title,
+    appliedProductType: payload.productType,
   });
 });
 
