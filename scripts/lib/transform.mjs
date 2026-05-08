@@ -18,6 +18,7 @@
 
 import { classifyProduct }                  from '../taxonomy/classifier.mjs';
 import { generateTitle, needsTitleRewrite } from '../taxonomy/title-generator.mjs';
+import { getCollectionData }                from './collection-logic.mjs';
 
 // ── Smart-fallback constants ───────────────────────────────────────────────────
 // Used when Etsy variation columns are absent or unrecognised.
@@ -67,6 +68,11 @@ const STYLE_PRICES = {
   'Case Only':       261.86,
   'Grip Only':       170.76,
   'Charm Only':      113.82,
+  // ── Strap-based variants (non-grip/charm product type) ─────────────────
+  // Prices mirror the equivalent grip/charm tier; operator can override in
+  // the dashboard's Base Price field before importing if needed.
+  'Case+Strap':      350.11,
+  'Strap Only':      113.82,
 };
 
 // ── SKU code tables ───────────────────────────────────────────────────────────
@@ -93,6 +99,8 @@ const STYLE_SKU_CODE = {
   'Case Only':       'CO',
   'Grip Only':       'GO',
   'Charm Only':      'CHO',
+  'Case+Strap':      'CST',
+  'Strap Only':      'STO',
 };
 
 // Character code for SKU generation — matched against lowercase product title
@@ -160,6 +168,20 @@ const CHAR_CODE_MAP = [
 //           "Case Only (204.94)"
 //           "Grip Only ( USD 170.76 )"
 const EMBEDDED_PRICE_RE = /^(.+?)\s*\(\s*(?:[A-Z]{3}\s*)?([\d,]+\.?\d*)\s*\)$/i;
+
+// ── Default Shopify product description (bodyHtml) ────────────────────────────
+// Structured marketing copy used as the per-product default.
+// Operators can override this field per-product in the dashboard Content Editor
+// before the import mutation fires; the edited value is synced back to the
+// server-side payload cache via POST /api/product/:handle/override.
+const SHOPIFY_BODY_TEMPLATE = [
+  '<h3>✨ Key Features</h3>',
+  '<ul>',
+  '  <li>Handcrafted Aesthetic</li>',
+  '  <li>Durable Clear Protection</li>',
+  '  <li>Precision fit for iPhone models</li>',
+  '</ul>',
+].join('\n');
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -342,19 +364,37 @@ function isGenericStyles(styles) {
 }
 
 /**
- * Apply smart-fallback rules to a normalised EtsyProduct and return a
- * patched copy.  The original object is never mutated.
+ * Resolve the final (models × styles) variation arrays for a product,
+ * returning a patched copy.  The original object is never mutated.
  *
- * Rule 1 — MagSafe style override
- *   Condition: styles are empty/generic AND the raw Etsy title matches
- *              /magsafe/i or /max\s*save/i
- *   Action:    Replace styles with MAGSAFE_STYLES_FALLBACK (6 canonical bundles)
+ * Rules are applied in strict priority order; once a rule sets the styles
+ * array the lower-priority rules are skipped for styles (models are handled
+ * independently by Rule 2).
  *
- * Rule 2 — Model fallback
+ * ── Rule 0: Description-derived styles  (HIGHEST AUTHORITY) ─────────────────
+ *   Source:    product.stylesFromDescription  (populated by normalize.mjs)
+ *   Condition: Description parser found ≥ 2 recognisable bundle section lines.
+ *   Action:    Use the parsed array as the canonical style list.
+ *   Rationale: The Etsy CSV's VARIATION 2 VALUES column always exports all six
+ *              canonical bundles regardless of what the listing actually sells.
+ *              The seller's written description is the ground truth — they list
+ *              exactly the bundles offered, one per line.
+ *   Badge tag: 'styles:desc_corrected_N→M' (only when count differs from CSV)
+ *
+ * ── Rule 1: MagSafe fallback  (fires only if Rule 0 gave no styles) ──────────
+ *   Condition: styles are empty/generic AND title matches /magsafe|max\s*save/i
+ *   Action:    Replace with MAGSAFE_STYLES_FALLBACK (canonical 6-bundle set)
+ *   Badge tag: 'styles:magsafe'
+ *
+ * ── Rule 2: Model fallback  (independent — runs for all products) ────────────
  *   Condition: models array is empty
- *   Action:    Replace models with MODELS_FALLBACK (top 12 iPhone lineup)
+ *   Action:    Replace with MODELS_FALLBACK (top 12 iPhone lineup)
+ *   Badge tag: 'models:default'
  *
- * Both rules are independent and may fire together.
+ * ── Rule 3: Intelligent title-based pruning  (only if Rules 0 & 1 skipped) ──
+ *   Kept as a last-resort safety net for products where description parsing
+ *   returns no results and the title gives a signal.
+ *   Badge tag: 'pruned:charm_only' | 'pruned:grip_only'
  *
  * @param {import('../lib/normalize.mjs').EtsyProduct} product
  * @returns {{ product: EtsyProduct, fallbacksApplied: string[] }}
@@ -364,10 +404,60 @@ function resolveVariations(product) {
 
   let { models, styles } = product;
 
+  // ── Rule 0: Description-first ────────────────────────────────────────────
+  // stylesFromDescription is always an array (empty [] when parser found nothing).
+  const descStyles = product.stylesFromDescription ?? [];
+
+  if (descStyles.length >= 2) {
+    // Strip any embedded-price suffixes from the CSV styles for comparison.
+    const csvClean = styles.map(s => {
+      const m = s.match(EMBEDDED_PRICE_RE);
+      return m ? m[1].trim() : s.trim();
+    });
+
+    const csvCount  = csvClean.length;
+    const descCount = descStyles.length;
+    const corrected = csvCount !== descCount ||
+                      descStyles.some((s, i) => s !== csvClean[i]);
+
+    styles = descStyles;
+
+    if (corrected) {
+      const tag = `styles:desc_corrected_${csvCount}→${descCount}`;
+      console.info(
+        `  [DESC]  ${tag}  (title: "${product.title.slice(0, 55)}…")`
+      );
+      fallbacksApplied.push(tag);
+    }
+
+    // Surface any component-inference additions made by inferMissingBundleStyles()
+    // so the dashboard ⚠ Fallback badge tells the operator which styles were inferred.
+    if (product.stylesInferred?.length) {
+      const tag = `styles:inferred(${product.stylesInferred.join('+')})`;
+      console.info(
+        `  [INFER] ${tag}  (title: "${product.title.slice(0, 55)}…")`
+      );
+      fallbacksApplied.push(tag);
+    }
+
+    // Rule 2 is independent — check models before returning.
+    if (models.length === 0) {
+      console.info(
+        `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 55)}…")`
+      );
+      models = MODELS_FALLBACK;
+      fallbacksApplied.push('models:default');
+    }
+
+    return { product: { ...product, models, styles }, fallbacksApplied };
+  }
+
+  // ── Rules 1–3: fallback path (description parser returned no styles) ──────
+
   // Rule 1: MagSafe / "max save" title → canonical 6-bundle styles
   if (isGenericStyles(styles) && /magsafe|max\s*save/i.test(product.title)) {
     console.info(
-      `  [FALLBACK] Styles → MagSafe 6-bundle set  (title: "${product.title.slice(0, 60)}…")`
+      `  [FALLBACK] Styles → MagSafe 6-bundle set  (title: "${product.title.slice(0, 55)}…")`
     );
     styles = MAGSAFE_STYLES_FALLBACK;
     fallbacksApplied.push('styles:magsafe');
@@ -376,16 +466,39 @@ function resolveVariations(product) {
   // Rule 2: Missing models → standard 12-model lineup
   if (models.length === 0) {
     console.info(
-      `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 60)}…")`
+      `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 55)}…")`
     );
     models = MODELS_FALLBACK;
     fallbacksApplied.push('models:default');
   }
 
-  return {
-    product:          { ...product, models, styles },
-    fallbacksApplied,
-  };
+  // Rule 3: Title-keyword pruning (last resort — fires only when description
+  // parsing failed and the title contains an unambiguous signal).
+  if (styles.length > 0) {
+    const hasCharm = /\bcharm\b/i.test(product.title);
+    const hasGrip  = /\bgrip\b/i.test(product.title);
+
+    let pruned = styles;
+    let tag    = null;
+
+    if (hasCharm && !hasGrip) {
+      pruned = styles.filter(s => !/grip/i.test(s));
+      if (pruned.length !== styles.length) tag = 'pruned:charm_only';
+    } else if (hasGrip && !hasCharm) {
+      pruned = styles.filter(s => !/charm/i.test(s));
+      if (pruned.length !== styles.length) tag = 'pruned:grip_only';
+    }
+
+    if (tag && pruned.length > 0) {
+      console.info(
+        `  [PRUNE]  ${tag}: ${styles.length} → ${pruned.length} style(s)  (title: "${product.title.slice(0, 55)}…")`
+      );
+      styles = pruned;
+      fallbacksApplied.push(tag);
+    }
+  }
+
+  return { product: { ...product, models, styles }, fallbacksApplied };
 }
 
 /**
@@ -445,11 +558,12 @@ function buildVariants(etsyProduct, classification) {
  * @typedef {object} ShopifyProductPayload
  * Fields matching ProductSetInput (sent to API):
  *  title, descriptionHtml, handle, vendor, productType, status,
- *  tags, seo, metafields, productOptions, variants
+ *  tags, collectionsToJoin, seo, metafields, productOptions, variants
  * Pipeline metadata fields (NOT sent to API directly):
  *  _images        — queued for productCreateMedia call after product creation
  *  _inventoryQty  — passed to inventorySetOnHandQuantities after product creation
- *  _meta          — debug/audit info (etsyTitle, classification, variantCount)
+ *  _meta          — debug/audit info: etsyTitle, classification, variantCount,
+ *                   fallbacksApplied, collections (for dashboard chip display)
  */
 export function buildShopifyPayload(etsyProduct) {
   // ── Step 0: Smart-fallback resolution ─────────────────────────────────────
@@ -463,6 +577,24 @@ export function buildShopifyPayload(etsyProduct) {
     tags:     p.tags.map(t => t.replace(/_/g, ' ')).join(', '),
     variants: p.models.map(m => ({ title: m })),
   });
+
+  // ── Step 1b: Collection & tag mapping ─────────────────────────────────────
+  // Pass the already-computed classification object so getCollectionData()
+  // can index directly into COLLECTION_MAP without a second classify pass.
+  //
+  // MagSafe cross-collection is automatic: when deviceBrand === 'iphone' AND
+  // attachment === 'magsafe', getCollectionData() includes the dedicated
+  // "MagSafe iPhone Cases" cross-dimension GID alongside the character and
+  // attachment collections — satisfying the spec requirement that MagSafe cases
+  // join BOTH the character collection and the MagSafe collection.
+  const collectionData = getCollectionData(classification);
+
+  // Merge "character:*" / "brand:*" supplementary tags into the classifier's
+  // prefixed tag set.  Set deduplication silently drops any overlap so the
+  // final array never contains duplicate tag strings.
+  const mergedTags = [
+    ...new Set([...classification.finalTags, ...collectionData.tags]),
+  ];
 
   // ── Step 2: Title rewrite ──────────────────────────────────────────────────
   const shopifyTitle = needsTitleRewrite(p.title)
@@ -487,11 +619,25 @@ export function buildShopifyPayload(etsyProduct) {
     // ── Fields sent to productSet mutation ────────────────────────────────────
     title:           shopifyTitle,
     descriptionHtml: descToHtml(p.description),
+    // bodyHtml is the editable marketing description surfaced in the dashboard
+    // Content Editor.  On import, the override route syncs any user edits back
+    // into descriptionHtml so the productSet mutation sends the correct copy.
+    bodyHtml:        SHOPIFY_BODY_TEMPLATE,
     handle:          slugify(shopifyTitle),
     vendor:          'Y2KASE',
     productType:     classification.shopifyProductType,
     status:          'DRAFT',
-    tags:            classification.finalTags,
+
+    // Merged tag array: classifier's prefixed taxonomy tags ("char:*", "ip:*",
+    // "attach:*", "aesthetic:*" …) plus collection-logic's supplementary
+    // storefront tags ("character:*", "brand:*").  Deduplicated via Set above.
+    tags:             mergedTags,
+
+    // Explicit collection membership for the productSet mutation.
+    // Shopify resolves smart-rule collections separately from this field, so
+    // including GIDs here ensures products appear in curated/manual collections
+    // even when smart rules are not yet configured on the destination store.
+    collectionsToJoin: collectionData.collectionIds,
 
     seo: {
       title:       shopifyTitle,
@@ -527,10 +673,14 @@ export function buildShopifyPayload(etsyProduct) {
 
     // Audit metadata — useful for dry-run display and post-import reports
     _meta: {
-      etsyTitle:       p.title,
-      variantCount:    variants.length,
+      etsyTitle:        p.title,
+      variantCount:     variants.length,
       // Non-empty when one or both smart-fallback rules fired for this product
       fallbacksApplied: fallbacksApplied.length ? fallbacksApplied : undefined,
+      // Full collection objects ordered most-specific → least-specific.
+      // Used by the dashboard After Pane to render "Auto-Assigned Collections"
+      // chips — each entry has { gid, label, level, handle, key }.
+      collections:      collectionData.collections,
       classification: {
         productType: classification.productType,
         deviceBrand: classification.deviceBrand,

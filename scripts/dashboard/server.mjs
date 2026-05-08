@@ -22,6 +22,7 @@ import open                 from 'open';
 import { parseCsvFile }        from '../lib/csv-parser.mjs';
 import { normalizeEtsyRecord } from '../lib/normalize.mjs';
 import { buildShopifyPayload } from '../lib/transform.mjs';
+import { enrichProductStyles } from '../lib/llm-enrich.mjs';
 import { loadProduct }         from '../lib/loader.mjs';
 import { shopifyGql, resolveLocationId } from '../shopify-client.mjs';
 
@@ -195,17 +196,36 @@ async function buildPreview() {
   _building = true;
 
   try {
-    // ── 1. Parse CSV + transform ──────────────────────────────────────────────
+    // ── 1. Parse CSV → normalise (sync) ──────────────────────────────────────
+    const rawProducts = [];   // all EtsyProduct objects in CSV order
+    for await (const raw of parseCsvFile(CSV_PATH)) {
+      const etsy = normalizeEtsyRecord(raw);
+      if (!etsy.title) continue;
+      rawProducts.push(etsy);
+    }
+
+    // ── 1b. LLM style extraction — gpt-5.4-mini reads every product description
+    //        and returns the exact bundle styles offered.  Results are cached to
+    //        disk by description hash so re-runs never re-call the API.
+    loadEnv(); // re-read .env so OPENAI_MODEL picks up any in-session changes
+    const openaiKey   = process.env.OPENAI_API_KEY?.trim();
+    const openaiModel = process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini';
+    const enriched   = await enrichProductStyles(rawProducts, openaiKey, openaiModel);
+
+    // Apply enrichment results back onto the product objects (non-mutating copy)
+    const products = rawProducts.map(p => {
+      const patch = enriched.get(p.title);
+      return patch ? { ...p, ...patch } : p;
+    });
+
+    // ── 1c. Transform enriched products → Shopify payloads ───────────────────
     const payloadMap = new Map();     // handle → full payload (needed by stream route)
     const seen       = new Set();     // dedup: one entry per handle
     const ordered    = [];            // [{ handle, payload, etsySku }] in CSV order
 
-    for await (const raw of parseCsvFile(CSV_PATH)) {
-      const etsy = normalizeEtsyRecord(raw);
+    for (const etsy of products) {
       // Title is the only hard requirement — missing models/styles are handled
       // by resolveVariations() (smart fallbacks) inside buildShopifyPayload().
-      if (!etsy.title) continue;
-
       let payload;
       try {
         payload = buildShopifyPayload(etsy);
@@ -243,6 +263,13 @@ async function buildPreview() {
         modelCount:       etsy.models.length,        // raw VARIATION 1 VALUES count
         styleCount:       etsy.styles.length,        // raw VARIATION 2 VALUES count
         fallbacksApplied: payload._meta.fallbacksApplied ?? null,
+        bodyHtml:         payload.bodyHtml,
+        // Auto-assigned collection objects [{gid,label,level,handle,key}].
+        // Rendered in the After Pane as read-only chips.
+        collections:      payload._meta.collections ?? [],
+        // Merged tag array (classifier prefixed + collection-logic supplementary).
+        // Exposed here so the After Pane's Tags field is pre-populated.
+        tags:             payload.tags ?? [],
         imageCount:   payload._images.length,
         priceMin:     Math.min(...etsyPrices),
         priceMax:     Math.max(...etsyPrices),
@@ -606,9 +633,10 @@ app.get('/api/product/:handle', async (req, res) => {
   if (!payload) {
     for await (const raw of parseCsvFile(CSV_PATH)) {
       const etsy = normalizeEtsyRecord(raw);
-      if (!etsy.title || !etsy.models.length || !etsy.styles.length) continue;
+      if (!etsy.title) continue; // fallbacks handle missing models/styles
       try {
         const p = buildShopifyPayload(etsy);
+        if (!p.variants.length) continue;
         if (p.handle === handle) { payload = p; break; }
       } catch { /* skip */ }
     }
@@ -641,6 +669,48 @@ app.get('/api/product/:handle', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ROUTE: GET /api/product/:handle/variants
+//
+// Returns the complete, post-pruning variant list for a given handle sourced
+// directly from the server-side preview cache (no Shopify API call).
+// Used by the Variant Explorer in the Conflict Inspector modal.
+//
+// Response: { handle, count, variants: [{ model, style, sku, price }] }
+// ═══════════════════════════════════════════════════════════════════════════════
+app.get('/api/product/:handle/variants', async (req, res) => {
+  const { handle } = req.params;
+
+  // Prefer the warm preview cache — avoids any CSV re-parse
+  let payload = _cache?.payloadMap?.get(handle) ?? null;
+
+  // Cold-cache fallback: selective re-parse until we find the handle
+  if (!payload) {
+    for await (const raw of parseCsvFile(CSV_PATH)) {
+      const etsy = normalizeEtsyRecord(raw);
+      if (!etsy.title) continue;
+      try {
+        const p = buildShopifyPayload(etsy);
+        if (!p.variants.length) continue;
+        if (p.handle === handle) { payload = p; break; }
+      } catch { /* skip malformed rows */ }
+    }
+  }
+
+  if (!payload) {
+    return res.status(404).json({ error: `Handle "${handle}" not found in cache — reload the preview first.` });
+  }
+
+  const variants = payload.variants.map(v => ({
+    model: v.optionValues.find(o => o.optionName === 'Phone Model')?.name ?? '—',
+    style: v.optionValues.find(o => o.optionName === 'Style')?.name ?? '—',
+    sku:   v.sku,
+    price: parseFloat(v.price),
+  }));
+
+  res.json({ handle, count: variants.length, variants });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ROUTE: POST /api/product/:handle/override
 //
 // Patches the in-memory preview cache for a given handle so that the NEXT
@@ -648,16 +718,21 @@ app.get('/api/product/:handle', async (req, res) => {
 // CSV-derived payload.
 //
 // Body (all fields optional):
-//   { title?: string, productType?: string, basePrice?: number }
+//   { title?: string, productType?: string, basePrice?: number,
+//     bodyHtml?: string, tags?: string[] | string }
 //
 // basePrice is treated as the desired new MINIMUM variant price.  All variant
 // prices are rescaled proportionally to preserve the bundle price structure.
 //
-// Returns: { ok: true, handle, appliedTitle, appliedProductType }
+// tags, when provided, are MERGED (not replaced) into the existing payload.tags
+// array via Set deduplication.  This allows the After Pane's Tags input to add
+// manual tags on top of the auto-assigned taxonomy set without wiping it.
+//
+// Returns: { ok: true, handle, appliedTitle, appliedProductType, tagCount }
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post('/api/product/:handle/override', (req, res) => {
   const { handle } = req.params;
-  const { title, productType, basePrice } = req.body ?? {};
+  const { title, productType, basePrice, bodyHtml, tags } = req.body ?? {};
 
   const payload = _cache?.payloadMap?.get(handle) ?? null;
   if (!payload) {
@@ -692,6 +767,25 @@ app.post('/api/product/:handle/override', (req, res) => {
     }
   }
 
+  // Description override — sync to both fields so the productSet mutation sends
+  // the user-edited copy (loader.mjs reads payload.descriptionHtml).
+  if (typeof bodyHtml === 'string') {
+    payload.bodyHtml        = bodyHtml;
+    payload.descriptionHtml = bodyHtml;
+  }
+
+  // Tags override — MERGE incoming tags into existing array (never replace).
+  // Accepts a string[] from the client; a comma-separated string is also
+  // tolerated for convenience.
+  if (tags !== undefined && tags !== null) {
+    const incoming = Array.isArray(tags)
+      ? tags
+      : String(tags).split(',').map(t => t.trim()).filter(Boolean);
+    if (incoming.length) {
+      payload.tags = [...new Set([...(payload.tags ?? []), ...incoming])];
+    }
+  }
+
   payload._overriddenAt = new Date().toISOString();
 
   res.json({
@@ -699,6 +793,7 @@ app.post('/api/product/:handle/override', (req, res) => {
     handle,
     appliedTitle:       payload.title,
     appliedProductType: payload.productType,
+    tagCount:           payload.tags.length,
   });
 });
 

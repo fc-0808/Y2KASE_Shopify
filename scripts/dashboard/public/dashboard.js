@@ -114,6 +114,7 @@ function cacheDOM() {
     overrideTitle:       $('override-title'),
     overrideProductType: $('override-product-type'),
     overrideBasePrice:   $('override-base-price'),
+    overrideDescription: $('override-description'),
 
     // Modal — After pane read-only display elements
     afterImgSlot:     $('after-img-slot'),
@@ -131,6 +132,15 @@ function cacheDOM() {
     diffBadge:        $('diff-badge'),
     diffEtsy:         $('diff-etsy'),
     diffShopify:      $('diff-shopify'),
+
+    // Modal — Variant Explorer (Section 3, collapsible)
+    variantExplorerDetails: $('variant-explorer-details'),
+    variantCountBadge:      $('variant-count-badge'),
+    variantExplorerWrap:    $('variant-explorer-wrap'),
+
+    // Modal — Auto-Assigned Collections display + manual Tags input
+    collectionChips: $('collection-chips'),
+    overrideTags:    $('override-tags'),
   };
 }
 
@@ -442,6 +452,10 @@ function openModal(handle) {
   // Auto-open the diff section when there are conflicts; collapse when clean
   if (D.diffDetails) D.diffDetails.open = n > 0;
 
+  // ── Section 3: Variant Explorer — always collapsed on open, loads async ───
+  if (D.variantExplorerDetails) D.variantExplorerDetails.open = false;
+  renderVariantExplorer(handle); // non-blocking: modal opens while table fetches
+
   D.modal.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   D.modalClose.focus();
@@ -481,6 +495,41 @@ function renderBeforePane(product) {
  * elements — no innerHTML injection.  This lets the editable <input> elements
  * retain their values and event listeners across repeated openModal() calls.
  */
+
+/**
+ * Render the read-only Auto-Assigned Collections chip list.
+ * Each chip shows the collection label and is colour-coded by level tier.
+ * Hovering reveals the full Shopify GID (placeholder or real).
+ *
+ * @param {Array<{gid:string, label:string, level:number, handle:string}>} collections
+ */
+function renderCollectionChips(collections) {
+  if (!D.collectionChips) return;
+  if (!Array.isArray(collections) || collections.length === 0) {
+    D.collectionChips.replaceChildren(
+      Object.assign(document.createElement('span'), {
+        className:   'collection-chips-empty',
+        textContent: '— none assigned',
+      })
+    );
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const col of collections) {
+    const chip = document.createElement('span');
+    const todoClass = col.live === false ? ' collection-chip-todo' : '';
+    chip.className   = `collection-chip collection-chip-level-${col.level}${todoClass}`;
+    chip.textContent = col.live === false ? `${col.label} 🔲` : col.label;
+    // Show full GID on hover — useful to verify live IDs / track pending ones
+    chip.title       = col.live === false
+      ? `🔲 Collection not yet created — create "${col.handle}" in Shopify Admin to activate`
+      : col.gid;
+    fragment.appendChild(chip);
+  }
+  D.collectionChips.replaceChildren(fragment);
+}
+
 function renderAfterPane(product) {
   // ── Image slot ────────────────────────────────────────────────────────────
   if (product.imageUrl) {
@@ -507,6 +556,10 @@ function renderAfterPane(product) {
   D.overrideTitle.value       = product.title;
   D.overrideProductType.value = product.collection ?? '';
   D.overrideBasePrice.value   = (product.priceMin ?? 0).toFixed(2);
+  // Description: use the per-product bodyHtml stored in productMap (may have
+  // been previously edited by the user).  Falls back to an empty string so the
+  // placeholder is visible on first open before the preview cache is warmed.
+  if (D.overrideDescription) D.overrideDescription.value = product.bodyHtml ?? '';
 
   // ── Read-only display fields ───────────────────────────────────────────────
   if (product.modelCount && product.styleCount) {
@@ -524,6 +577,14 @@ function renderAfterPane(product) {
     D.fallbackBadge.textContent = '⚠ Fallback Active';
     D.fallbackBadge.title = `Auto-filled by smart fallback: ${product.fallbacksApplied.join(', ')}`;
   }
+
+  // ── Auto-Assigned Collections chips ───────────────────────────────────────
+  renderCollectionChips(product.collections ?? []);
+
+  // ── Tags input — clear on each open so the field only holds NEW additions.
+  // The full auto-assigned tag list (30+ taxonomy tags) is managed server-side;
+  // this input exists solely for manual extras the user wants to bolt on.
+  if (D.overrideTags) D.overrideTags.value = '';
 }
 
 /**
@@ -551,6 +612,84 @@ function renderDiffPane(paneEl, summary, diffs = []) {
   }).join('');
 }
 
+/**
+ * Fetch the full post-pruning variant list from the server and render it into
+ * the Section 3 Variant Explorer table.
+ *
+ * This is called on every openModal() — it fires asynchronously so the modal
+ * opens immediately while the table data loads in the background.
+ *
+ * Columns:  Model · Style  |  SKU  |  Price (HKD)
+ *
+ * @param {string} handle
+ */
+async function renderVariantExplorer(handle) {
+  if (!D.variantExplorerWrap) return;
+
+  // Reset badge and show spinner-style placeholder
+  if (D.variantCountBadge) {
+    D.variantCountBadge.textContent = '…';
+    D.variantCountBadge.className   = 'diff-badge no-diffs';
+  }
+  D.variantExplorerWrap.innerHTML = '<div class="vt-placeholder vt-loading">Loading variants…</div>';
+
+  try {
+    const data = await fetchJson(`/api/product/${encodeURIComponent(handle)}/variants`);
+
+    // Update badge
+    if (D.variantCountBadge) {
+      D.variantCountBadge.textContent = `${data.count} variant${data.count !== 1 ? 's' : ''}`;
+      D.variantCountBadge.className   = 'diff-badge';
+    }
+
+    if (!data.variants.length) {
+      D.variantExplorerWrap.innerHTML = '<div class="vt-placeholder">No variants found for this product.</div>';
+      return;
+    }
+
+    // Group rows: detect model changes to insert a subtle visual separator
+    let lastModel = null;
+    const rows = data.variants.map(v => {
+      const modelChanged = v.model !== lastModel;
+      lastModel = v.model;
+      return `
+        <tr class="${modelChanged ? 'vt-model-start' : ''}">
+          <td class="vt-name">
+            <span class="vt-model">${esc(v.model)}</span>
+            <span class="vt-sep">·</span>
+            <span class="vt-style">${esc(v.style)}</span>
+          </td>
+          <td class="vt-sku-cell"><code class="vt-sku">${esc(v.sku)}</code></td>
+          <td class="vt-price">HK$${v.price.toFixed(2)}</td>
+        </tr>`;
+    }).join('');
+
+    D.variantExplorerWrap.innerHTML = `
+      <table class="variant-table">
+        <colgroup>
+          <col class="vt-col-name">
+          <col class="vt-col-sku">
+          <col class="vt-col-price">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="vt-name">Model · Style</th>
+            <th class="vt-sku-cell">SKU</th>
+            <th class="vt-price">Price</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+  } catch (err) {
+    D.variantExplorerWrap.innerHTML = `<div class="vt-placeholder vt-error">⚠ ${esc(err.message)}</div>`;
+    if (D.variantCountBadge) {
+      D.variantCountBadge.textContent = 'Error';
+      D.variantCountBadge.className   = 'diff-badge';
+    }
+  }
+}
+
 // ── Override helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -570,6 +709,16 @@ function commitOverrides(handle) {
   const newTitle       = D.overrideTitle.value.trim();
   const newProductType = D.overrideProductType.value.trim();
   const newBasePrice   = parseFloat(D.overrideBasePrice.value);
+  // Description: do NOT trim — HTML whitespace (indentation, newlines) is
+  // intentional and must be preserved exactly as the user typed it.
+  const newBodyHtml    = D.overrideDescription?.value ?? null;
+  // Additional tags: comma-separated string the user typed in the Tags input.
+  // We parse, lowercase, and deduplicate before merging; the field is NOT
+  // pre-filled with existing auto-tags so this only captures net-new additions.
+  const additionalTags = (D.overrideTags?.value ?? '')
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(Boolean);
 
   // Build a diff patch — only include fields that actually changed
   const patch = {};
@@ -577,13 +726,20 @@ function commitOverrides(handle) {
   if (newProductType && newProductType !== product.collection)                   patch.productType = newProductType;
   if (!isNaN(newBasePrice) && newBasePrice > 0 &&
       Math.abs(newBasePrice - (product.priceMin ?? 0)) > 0.005)                 patch.basePrice   = newBasePrice;
+  if (newBodyHtml !== null && newBodyHtml !== (product.bodyHtml ?? ''))          patch.bodyHtml    = newBodyHtml;
+  if (additionalTags.length)                                                     patch.tags        = additionalTags;
 
   if (!Object.keys(patch).length) return null; // nothing changed
 
   // ── 1. Update client-side productMap (synchronous) ─────────────────────
   const updated = { ...product };
-  if (patch.title)       updated.title      = patch.title;
-  if (patch.productType) updated.collection = patch.productType;
+  if (patch.title)                   updated.title      = patch.title;
+  if (patch.productType)             updated.collection = patch.productType;
+  if (patch.bodyHtml !== undefined)  updated.bodyHtml   = patch.bodyHtml;
+  if (patch.tags?.length) {
+    // Merge additional tags into existing tag array; deduplicate via Set.
+    updated.tags = [...new Set([...(product.tags ?? []), ...patch.tags])];
+  }
   if (patch.basePrice != null) {
     const oldMin = product.priceMin ?? 0;
     const oldMax = product.priceMax ?? 0;
@@ -602,6 +758,10 @@ function commitOverrides(handle) {
 
   // ── 2. Reflect changes in the audit table row immediately ───────────────
   updateRowFromOverride(handle, updated);
+
+  // Clear the tags input immediately after capture so the same tags aren't
+  // re-sent if the user saves again or opens another product.
+  if (D.overrideTags) D.overrideTags.value = '';
 
   // ── 3. Push patch to server (fire-and-forget) ───────────────────────────
   // The server patches _cache.payloadMap so the next SSE import run uses

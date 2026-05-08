@@ -1083,6 +1083,41 @@ table.audit-table tbody tr.row-imported td {
   letter-spacing: .02em;
 }
 
+/* ── DESCRIPTION EDITOR (bodyHtml textarea) ──────────────────────────────── */
+/* Section wrapper adds top separator + breathing room below the meta grid.  */
+.after-desc-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Hint text beside the field label — explains the HTML/import behaviour.    */
+.override-field-hint {
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: .65;
+  margin-left: 4px;
+}
+
+/* The textarea inherits .override-input base styles then adds mono + resize. */
+.override-textarea {
+  min-height: 150px;
+  resize: vertical;
+  font: 400 11px/1.7 var(--font-mono);
+  /* Preserve HTML indentation exactly — no word-wrap so tags stay on one line */
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  padding: 8px 10px;
+  /* JetBrains Mono makes <tag> delimiters visually crisp */
+  tab-size: 2;
+}
+
+/* Expand the after-pane's scroll height to comfortably fit the new section. */
+.after-pane { max-height: 480px; }
+
 /* ── SAVE OVERRIDES BUTTON ───────────────────────────────────────────────── */
 /* Accent-tinted ghost variant — visually distinct from the plain Skip ghost. */
 .btn-accent-ghost {
@@ -1120,6 +1155,142 @@ table.audit-table tbody tr.row-imported td {
   50%       { opacity: .65; }
 }
 
+/* ── VARIANT EXPLORER (modal section 3) ─────────────────────────────────── */
+.variant-explorer-details {
+  border-top: 1px solid var(--border);
+}
+
+.variant-explorer-body {
+  padding: 0 0 8px;
+}
+
+/* Scrollable table container — sticky thead works because overflow is on     */
+/* this div, not the table.                                                   */
+.variant-explorer-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.variant-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.variant-table col.vt-col-name  { /* auto — fills remaining space */ }
+.variant-table col.vt-col-sku   { width: 216px; }
+.variant-table col.vt-col-price { width: 86px; }
+
+/* Sticky header inside the scrollable wrapper */
+.variant-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+}
+
+.variant-table th {
+  padding: 7px 14px;
+  text-align: left;
+  font: 700 10px/1 var(--font-ui);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 2px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.variant-table td {
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* Top border on first row of each new model group = visual grouping rule */
+.variant-table tr.vt-model-start td {
+  border-top: 1px solid var(--border-strong);
+}
+
+.variant-table tr:last-child td {
+  border-bottom: none;
+}
+
+.variant-table tbody tr:hover td {
+  background: var(--panel-hover);
+}
+
+/* Model name — primary weight */
+.vt-model {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Separator dot between model and style */
+.vt-sep {
+  margin: 0 6px;
+  color: var(--border-strong);
+  font-weight: 400;
+  user-select: none;
+}
+
+/* Style name — secondary, slightly muted */
+.vt-style {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* SKU column */
+.vt-sku-cell { font-family: var(--font-mono); }
+
+.vt-sku {
+  font: 500 11px var(--font-mono);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  color: var(--accent);
+  letter-spacing: .02em;
+  display: inline-block;
+}
+
+/* Price column — right-aligned monospace */
+.variant-table th.vt-price,
+.variant-table td.vt-price {
+  text-align: right;
+}
+
+.vt-price {
+  font: 500 12px var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Placeholder / loading / error states inside the wrap */
+.vt-placeholder {
+  padding: 18px 18px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.vt-loading::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .55s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.vt-error {
+  color: var(--status-error);
+  font-style: normal;
+}
+
 /* Compact inline version rendered inside audit table title cells.           */
 .fallback-badge-inline {
   display: inline-flex;
@@ -1137,3 +1308,107 @@ table.audit-table tbody tr.row-imported td {
   cursor: help;
   white-space: nowrap;
 }
+
+/* ── AUTO-ASSIGNED COLLECTIONS (After Pane) ─────────────────────────────── */
+
+/* Section wrapper — same top-border rhythm as .after-desc-section */
+.after-collections-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Chip container — wraps naturally for long collection lists */
+.collection-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+  margin-top: 7px;
+}
+
+/* Empty-state text */
+.collection-chips-empty {
+  font: 400 11px/1 var(--font-ui);
+  color: var(--text-muted);
+}
+
+/* Base chip — shared across all level tiers */
+.collection-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font: 500 10px/1.4 var(--font-ui);
+  letter-spacing: .03em;
+  white-space: nowrap;
+  cursor: help;                       /* hint that GID is visible on hover */
+  transition: opacity .15s;
+}
+.collection-chip:hover { opacity: .75; }
+
+/* Level 5 — Characters: accent teal (most prominent / most specific) */
+.collection-chip-level-5 {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-hover);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Level 4 — IP / Franchise: purple tint */
+.collection-chip-level-4 {
+  background: color-mix(in srgb, #a78bfa 16%, transparent);
+  color: #c4b5fd;
+  border: 1px solid color-mix(in srgb, #a78bfa 35%, transparent);
+}
+
+/* Level 3 — Cross-dimension (MagSafe × iPhone): blue tint */
+.collection-chip-level-3 {
+  background: color-mix(in srgb, #60a5fa 16%, transparent);
+  color: #93c5fd;
+  border: 1px solid color-mix(in srgb, #60a5fa 35%, transparent);
+}
+
+/* Level 2 — Attachment technology: grey-green */
+.collection-chip-level-2 {
+  background: color-mix(in srgb, #34d399 14%, transparent);
+  color: #6ee7b7;
+  border: 1px solid color-mix(in srgb, #34d399 30%, transparent);
+}
+
+/* Level 1 — Product type: neutral grey */
+.collection-chip-level-1 {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+
+/* Level 6 — Aesthetic: warm pink */
+.collection-chip-level-6 {
+  background: color-mix(in srgb, #f472b6 15%, transparent);
+  color: #f9a8d4;
+  border: 1px solid color-mix(in srgb, #f472b6 32%, transparent);
+}
+
+/* Level 7 — All Products: very subtle, de-emphasised */
+.collection-chip-level-7 {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  opacity: .6;
+}
+
+/* 🔲 TODO — collection GID is still a placeholder; shown for awareness but
+   visually de-emphasised so live collections stand out.                      */
+.collection-chip-todo {
+  opacity: .45;
+  border-style: dashed;
+}
+
+/* ── MANUAL TAGS INPUT (After Pane) ─────────────────────────────────────── */
+
+/* Section wrapper */
+.after-tags-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* The input re-uses .override-input base styles from Phase 2.
+   No additional overrides needed; the placeholder text makes intent clear. */

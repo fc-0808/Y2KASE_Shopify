@@ -316,6 +316,46 @@
             </div>
 
           </div><!-- /.after-meta -->
+
+          <!-- Description / bodyHtml editor -->
+          <div class="after-desc-section">
+            <div class="override-field-label">
+              Product Description
+              <span class="override-field-hint">(HTML — edits replace Etsy copy on import)</span>
+            </div>
+            <textarea id="override-description"
+                      class="override-input override-textarea"
+                      placeholder="&lt;h3&gt;✨ Key Features&lt;/h3&gt;&#10;&lt;ul&gt;&#10;  &lt;li&gt;Handcrafted Aesthetic&lt;/li&gt;&#10;&lt;/ul&gt;"
+                      autocomplete="off"
+                      spellcheck="false"
+                      rows="7"></textarea>
+          </div>
+
+          <!-- Auto-Assigned Collections (read-only — computed from title) -->
+          <div class="after-collections-section">
+            <div class="override-field-label">
+              Auto-Assigned Collections
+              <span class="override-field-hint">(computed from title — replace GID placeholders in collection-logic.mjs)</span>
+            </div>
+            <div class="collection-chips" id="collection-chips">
+              <span class="collection-chips-empty">—</span>
+            </div>
+          </div>
+
+          <!-- Manual tag additions (merged with auto-tags on save) -->
+          <div class="after-tags-section">
+            <div class="override-field-label">
+              Add Tags
+              <span class="override-field-hint">(comma-separated — merged with auto-assigned tags on save)</span>
+            </div>
+            <input type="text"
+                   id="override-tags"
+                   class="override-input"
+                   placeholder="e.g. sale, featured, limited-edition"
+                   autocomplete="off"
+                   spellcheck="false">
+          </div>
+
         </div><!-- /.after-pane -->
 
       </div><!-- /.visual-split -->
@@ -335,6 +375,22 @@
         <div class="diff-grid" id="diff-grid">
           <div class="diff-pane" id="diff-etsy"></div>
           <div class="diff-pane" id="diff-shopify"></div>
+        </div>
+
+      </details>
+
+      <!-- ── SECTION 3: Full Variant Explorer ─────────────────────────────── -->
+      <details class="diff-details variant-explorer-details" id="variant-explorer-details">
+        <summary class="diff-summary">
+          <span>Full Variant List</span>
+          <span class="diff-badge no-diffs" id="variant-count-badge">— variants</span>
+        </summary>
+
+        <div class="variant-explorer-body">
+          <!-- Table injected by renderVariantExplorer() — scrollable, read-only -->
+          <div class="variant-explorer-wrap" id="variant-explorer-wrap">
+            <div class="vt-placeholder">Open a product to see its variant matrix.</div>
+          </div>
         </div>
 
       </details>
