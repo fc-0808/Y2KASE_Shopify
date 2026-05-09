@@ -10,7 +10,7 @@ function loadEnv(f) {
 loadEnv(resolve(__dirname, '../.env'));
 
 const SHOP  = process.env.SHOPIFY_SHOP;
-const VER   = process.env.SHOPIFY_API_VERSION || '2025-04';
+const VER   = process.env.SHOPIFY_API_VERSION || '2026-04';
 
 // Try unauthenticated Storefront API call
 const sfQuery = `{

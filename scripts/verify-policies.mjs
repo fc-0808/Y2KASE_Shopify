@@ -7,7 +7,7 @@ function loadEnv(f) {
   for (const line of t.split(/\r?\n/)) { const s = line.trim(); if (!s || s.startsWith('#')) continue; const eq = s.indexOf('='); if (eq === -1) continue; process.env[s.slice(0,eq).trim()] = s.slice(eq+1).trim(); }
 }
 loadEnv(resolve(__dirname, '../.env'));
-const SHOP=process.env.SHOPIFY_SHOP,TOKEN=process.env.SHOPIFY_ADMIN_ACCESS_TOKEN,VER=process.env.SHOPIFY_API_VERSION||'2025-04';
+const SHOP=process.env.SHOPIFY_SHOP,TOKEN=process.env.SHOPIFY_ADMIN_ACCESS_TOKEN,VER=process.env.SHOPIFY_API_VERSION||'2026-04';
 
 // REST check
 const r = await fetch(`https://${SHOP}/admin/api/${VER}/policies.json`, { headers:{'X-Shopify-Access-Token':TOKEN} });

@@ -56,7 +56,7 @@ function loadEnv() {
 loadEnv();
 
 const STORE   = process.env.SHOPIFY_SHOP?.trim();
-const VERSION = process.env.SHOPIFY_API_VERSION || '2025-04';
+const VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
 
 // ── Token validator (lightweight ping for preflight) ──────────────────────────
 async function checkToken() {
@@ -212,16 +212,17 @@ async function buildPreview() {
     const openaiModel = process.env.OPENAI_MODEL?.trim() || 'gpt-5.4-mini';
     const enriched   = await enrichProductStyles(rawProducts, openaiKey, openaiModel);
 
-    // Apply enrichment results back onto the product objects (non-mutating copy)
+    // Apply enrichment results back onto the product objects (non-mutating copy).
+    // patch = { stylesFromDescription: string[], components: {hasGrip,hasCharm,hasStrap} }
     const products = rawProducts.map(p => {
       const patch = enriched.get(p.title);
-      return patch ? { ...p, ...patch } : p;
+      return patch ? { ...p, stylesFromDescription: patch.stylesFromDescription, _components: patch.components } : p;
     });
 
     // ── 1c. Transform enriched products → Shopify payloads ───────────────────
-    const payloadMap = new Map();     // handle → full payload (needed by stream route)
-    const seen       = new Set();     // dedup: one entry per handle
-    const ordered    = [];            // [{ handle, payload, etsySku }] in CSV order
+    const payloadMap  = new Map();     // handle → full payload (needed by stream route)
+    const handleCount = new Map();     // base handle → number of times seen (for suffix)
+    const ordered     = [];            // [{ handle, payload, etsySku }] in CSV order
 
     for (const etsy of products) {
       // Title is the only hard requirement — missing models/styles are handled
@@ -237,11 +238,26 @@ async function buildPreview() {
       // Skip products that ended up with zero variants even after fallbacks
       if (!payload.variants.length) continue;
 
-      if (seen.has(payload.handle)) continue; // deduplicate by generated handle
-      seen.add(payload.handle);
-      payloadMap.set(payload.handle, payload);
+      // When multiple Etsy listings generate the same clean Shopify handle
+      // (e.g. "monchhichi-clear-iphone-case-with-charm-kawaii"), append a
+      // numeric suffix (-2, -3 …) so every product gets a unique handle
+      // and none are silently dropped.
+      const baseHandle = payload.handle;
+      const count = handleCount.get(baseHandle) ?? 0;
+      handleCount.set(baseHandle, count + 1);
+
+      const uniqueHandle = count === 0 ? baseHandle : `${baseHandle}-${count + 1}`;
+      if (uniqueHandle !== baseHandle) {
+        payload = { ...payload, handle: uniqueHandle };
+        console.info(
+          `[preview] handle collision resolved: "${baseHandle}" → "${uniqueHandle}" ` +
+          `(title: "${etsy.title.slice(0, 50)}…")`
+        );
+      }
+
+      payloadMap.set(uniqueHandle, payload);
       // Preserve raw etsy fields alongside payload for preview enrichment
-      ordered.push({ handle: payload.handle, payload, etsySku: etsy.etsySku, etsy });
+      ordered.push({ handle: uniqueHandle, payload, etsySku: etsy.etsySku, etsy });
     }
 
     // ── 2. Batch-check Shopify for existing products ──────────────────────────
@@ -254,14 +270,22 @@ async function buildPreview() {
       const diff           = computeDiff(payload, shopifyProduct);
       const etsyPrices     = payload.variants.map(v => parseFloat(v.price));
 
+      // Derive actual option counts + style names from the transformed payload.
+      // These are post-LLM-enrichment values and are more accurate than the raw
+      // CSV VARIATION counts (which always export all 6 options regardless of
+      // what the product actually sells, and don't reflect model fallbacks).
+      const modelOptions = (payload.productOptions?.find(o => o.name === 'Phone Model')?.values ?? []).map(v => v.name);
+      const styleOptions = (payload.productOptions?.find(o => o.name === 'Style')?.values ?? []).map(v => v.name);
+
       return {
         status:       diff.status,          // 'new' | 'conflict' | 'match'
         handle,
         title:        payload.title,
         etsySku:      etsySku || null,
-        variantCount:     payload.variants.length,  // dynamic: models.length × styles.length
-        modelCount:       etsy.models.length,        // raw VARIATION 1 VALUES count
-        styleCount:       etsy.styles.length,        // raw VARIATION 2 VALUES count
+        variantCount:     payload.variants.length,  // dynamic: models × styles
+        modelCount:       modelOptions.length,       // actual derived model count
+        styleCount:       styleOptions.length,       // actual derived style count
+        styleOptions,                                // e.g. ['Case+Grip+Charm', 'Case+Grip', …]
         fallbacksApplied: payload._meta.fallbacksApplied ?? null,
         bodyHtml:         payload.bodyHtml,
         // Auto-assigned collection objects [{gid,label,level,handle,key}].
@@ -506,11 +530,16 @@ app.get('/api/import/stream', async (req, res) => {
 
       emit({ type: 'product_start', index: idx, total: handles.length, handle, title: payload.title });
 
+      // If the user explicitly selected a MATCH product, skip the existence check
+      // so productSet runs as an upsert (updates the partial/existing product).
+      const cachedStatus = _cache?.results?.find(r => r.handle === handle)?.status;
+      const skipExisting = cachedStatus === 'match' ? false : true;
+
       try {
         const result = await loadProduct(payload, locationId, {
-          dryRun:       false,
-          skipExisting: true,
-          onProgress:   (event) => {
+          dryRun: false,
+          skipExisting,
+          onProgress: (event) => {
             // Relay each step event back to the SSE stream
             emit({ ...event, index: idx, total: handles.length, handle });
           },

@@ -14,7 +14,7 @@ const sfQuery = `{
   }
 }`;
 
-const r = await fetch('https://y2kase-1435.myshopify.com/api/2025-04/graphql.json', {
+const r = await fetch('https://y2kase-1435.myshopify.com/api/2026-04/graphql.json', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ query: sfQuery }),

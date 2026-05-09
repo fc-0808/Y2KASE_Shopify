@@ -159,9 +159,10 @@ export function buildInventoryVariables(inventoryItems, locationId, qty) {
     input: {
       reason: 'correction',
       setQuantities: inventoryItems.map(item => ({
-        inventoryItemId: item.inventoryItemId,
+        inventoryItemId:    item.inventoryItemId,
         locationId,
-        quantity:        qty,
+        quantity:           qty,
+        changeFromQuantity: 0,
       })),
     },
   };

@@ -27,7 +27,7 @@ function readEnv() {
 const env   = readEnv();
 const TOKEN = env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 const SHOP  = env.SHOPIFY_SHOP;
-const BASE  = `https://${SHOP}/admin/api/2025-04`;
+const BASE  = `https://${SHOP}/admin/api/2026-04`;
 
 const css = readFileSync(resolve(ROOT, 'assets/y2kase.css'), 'utf8');
 
@@ -46,7 +46,7 @@ const jsPayload = `(function(){
 })();`;
 
 async function gql(query, variables = {}) {
-  const r = await fetch(`https://${SHOP}/admin/api/2025-04/graphql.json`, {
+  const r = await fetch(`https://${SHOP}/admin/api/2026-04/graphql.json`, {
     method: 'POST',
     headers: {
       'X-Shopify-Access-Token': TOKEN,

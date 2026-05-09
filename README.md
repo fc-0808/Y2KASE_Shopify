@@ -53,7 +53,7 @@ SHOPIFY_SHOP=your-store.myshopify.com
 SHOPIFY_CLIENT_ID=<from your Custom App dashboard>
 SHOPIFY_CLIENT_SECRET=<from your Custom App dashboard>
 SHOPIFY_ADMIN_ACCESS_TOKEN=<refreshed — see step 4>
-SHOPIFY_API_VERSION=2025-04
+SHOPIFY_API_VERSION=2026-04
 ```
 
 > **Never commit `.env` to git.** It is listed in `.gitignore`.

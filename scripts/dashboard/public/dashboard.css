@@ -1412,3 +1412,55 @@ table.audit-table tbody tr.row-imported td {
 
 /* The input re-uses .override-input base styles from Phase 2.
    No additional overrides needed; the placeholder text makes intent clear. */
+
+/* ── STYLE OPTION CHIPS (audit table title cell) ─────────────────────────── */
+
+/* Title cell: allow style chips to wrap onto a second line.                  */
+/* Override the table-wide white-space:nowrap + overflow:hidden on td.        */
+table.audit-table td.col-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  vertical-align: top;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+/* Title text line — keeps the title itself on a single nowrap line so it     */
+/* still clips and shows an ellipsis like the other cells do.                 */
+.title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+  margin-bottom: 5px;
+}
+
+/* Chip strip — mirrors the Shopify product admin "Style" option display.     */
+.style-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+  align-items: center;
+}
+
+/* Individual style chip */
+.style-chip {
+  display: inline-flex;
+  align-items: center;
+  font: 500 9px/1.5 var(--font-mono);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 20px;
+  padding: 1px 7px;
+  color: var(--accent-hover);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: background .12s, border-color .12s;
+}
+
+table.audit-table tbody tr:hover .style-chip {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-hover));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}

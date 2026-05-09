@@ -16,7 +16,7 @@ loadEnv(resolve(__dirname, '../.env'));
 
 const SHOP  = process.env.SHOPIFY_SHOP;
 const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-const VER   = process.env.SHOPIFY_API_VERSION || '2025-04';
+const VER   = process.env.SHOPIFY_API_VERSION || '2026-04';
 const BASE  = `https://${SHOP}/admin/api/${VER}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

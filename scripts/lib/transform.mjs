@@ -20,22 +20,9 @@ import { classifyProduct }                  from '../taxonomy/classifier.mjs';
 import { generateTitle, needsTitleRewrite } from '../taxonomy/title-generator.mjs';
 import { getCollectionData }                from './collection-logic.mjs';
 
-// ── Smart-fallback constants ───────────────────────────────────────────────────
-// Used when Etsy variation columns are absent or unrecognised.
-
-/**
- * Canonical 6-bundle style list.
- * Triggered when the raw Etsy title signals a MagSafe listing but the
- * VARIATION 2 VALUES column is empty or contains only unrecognised values.
- */
-const MAGSAFE_STYLES_FALLBACK = [
-  'Case+Grip+Charm',
-  'Case+Grip',
-  'Case+Charm',
-  'Case Only',
-  'Grip Only',
-  'Charm Only',
-];
+// ── Model fallback ─────────────────────────────────────────────────────────────
+// Used when VARIATION 1 VALUES is completely empty (common for strap products
+// and some imported listings).
 
 /**
  * Standard 12-model iPhone lineup used as the Models fallback when
@@ -346,156 +333,51 @@ function buildMetafields(etsyProduct, shopifyTitle) {
 }
 
 /**
- * Determine whether a styles array is "generic" — i.e. it is either empty or
- * every entry fails to match any key in STYLE_PRICES after stripping an
- * embedded-price suffix.  Generic arrays do not contribute useful Cartesian
- * data and are safe to replace with a smart fallback.
+ * Resolve the final (models × styles) variation arrays for a product.
+ * Returns a patched copy — the original object is never mutated.
  *
- * @param {string[]} styles
- * @returns {boolean}
- */
-function isGenericStyles(styles) {
-  if (styles.length === 0) return true;
-  return styles.every(raw => {
-    const match = raw.match(EMBEDDED_PRICE_RE);
-    const name  = match ? match[1].trim() : raw.trim();
-    return !(name in STYLE_PRICES);
-  });
-}
-
-/**
- * Resolve the final (models × styles) variation arrays for a product,
- * returning a patched copy.  The original object is never mutated.
+ * Style source:
+ *   product.stylesFromDescription — set by the LLM component classifier in
+ *   llm-enrich.mjs before this function runs.  The classifier determines
+ *   hasGrip / hasCharm / hasStrap from the product description, then a
+ *   deterministic matrix derives the complete correct style list.
+ *   Human description omissions are irrelevant — the matrix is complete.
  *
- * Rules are applied in strict priority order; once a rule sets the styles
- * array the lower-priority rules are skipped for styles (models are handled
- * independently by Rule 2).
+ *   If enrichment did not run (no API key, startup error), stylesFromDescription
+ *   is [].  The raw CSV styles are used as a last resort even though they are
+ *   unreliable (the CSV always exports 6 generic options regardless of what the
+ *   listing actually sells).
  *
- * ── Rule 0: Description-derived styles  (HIGHEST AUTHORITY) ─────────────────
- *   Source:    product.stylesFromDescription  (populated by normalize.mjs)
- *   Condition: Description parser found ≥ 2 recognisable bundle section lines.
- *   Action:    Use the parsed array as the canonical style list.
- *   Rationale: The Etsy CSV's VARIATION 2 VALUES column always exports all six
- *              canonical bundles regardless of what the listing actually sells.
- *              The seller's written description is the ground truth — they list
- *              exactly the bundles offered, one per line.
- *   Badge tag: 'styles:desc_corrected_N→M' (only when count differs from CSV)
- *
- * ── Rule 1: MagSafe fallback  (fires only if Rule 0 gave no styles) ──────────
- *   Condition: styles are empty/generic AND title matches /magsafe|max\s*save/i
- *   Action:    Replace with MAGSAFE_STYLES_FALLBACK (canonical 6-bundle set)
- *   Badge tag: 'styles:magsafe'
- *
- * ── Rule 2: Model fallback  (independent — runs for all products) ────────────
- *   Condition: models array is empty
- *   Action:    Replace with MODELS_FALLBACK (top 12 iPhone lineup)
- *   Badge tag: 'models:default'
- *
- * ── Rule 3: Intelligent title-based pruning  (only if Rules 0 & 1 skipped) ──
- *   Kept as a last-resort safety net for products where description parsing
- *   returns no results and the title gives a signal.
- *   Badge tag: 'pruned:charm_only' | 'pruned:grip_only'
+ * Model source:
+ *   product.models — raw VARIATION 1 VALUES split by comma.
+ *   Falls back to MODELS_FALLBACK (top 12 iPhone lineup) when empty.
  *
  * @param {import('../lib/normalize.mjs').EtsyProduct} product
  * @returns {{ product: EtsyProduct, fallbacksApplied: string[] }}
  */
 function resolveVariations(product) {
   const fallbacksApplied = [];
-
   let { models, styles } = product;
 
-  // ── Rule 0: Description-first ────────────────────────────────────────────
-  // stylesFromDescription is always an array (empty [] when parser found nothing).
-  const descStyles = product.stylesFromDescription ?? [];
-
-  if (descStyles.length >= 2) {
-    // Strip any embedded-price suffixes from the CSV styles for comparison.
-    const csvClean = styles.map(s => {
-      const m = s.match(EMBEDDED_PRICE_RE);
-      return m ? m[1].trim() : s.trim();
-    });
-
-    const csvCount  = csvClean.length;
-    const descCount = descStyles.length;
-    const corrected = csvCount !== descCount ||
-                      descStyles.some((s, i) => s !== csvClean[i]);
-
-    styles = descStyles;
-
-    if (corrected) {
-      const tag = `styles:desc_corrected_${csvCount}→${descCount}`;
-      console.info(
-        `  [DESC]  ${tag}  (title: "${product.title.slice(0, 55)}…")`
-      );
-      fallbacksApplied.push(tag);
-    }
-
-    // Surface any component-inference additions made by inferMissingBundleStyles()
-    // so the dashboard ⚠ Fallback badge tells the operator which styles were inferred.
-    if (product.stylesInferred?.length) {
-      const tag = `styles:inferred(${product.stylesInferred.join('+')})`;
-      console.info(
-        `  [INFER] ${tag}  (title: "${product.title.slice(0, 55)}…")`
-      );
-      fallbacksApplied.push(tag);
-    }
-
-    // Rule 2 is independent — check models before returning.
-    if (models.length === 0) {
-      console.info(
-        `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 55)}…")`
-      );
-      models = MODELS_FALLBACK;
-      fallbacksApplied.push('models:default');
-    }
-
-    return { product: { ...product, models, styles }, fallbacksApplied };
-  }
-
-  // ── Rules 1–3: fallback path (description parser returned no styles) ──────
-
-  // Rule 1: MagSafe / "max save" title → canonical 6-bundle styles
-  if (isGenericStyles(styles) && /magsafe|max\s*save/i.test(product.title)) {
-    console.info(
-      `  [FALLBACK] Styles → MagSafe 6-bundle set  (title: "${product.title.slice(0, 55)}…")`
+  // ── Styles: use LLM-derived list (populated by enrichProductStyles) ──────
+  const llmStyles = product.stylesFromDescription ?? [];
+  if (llmStyles.length > 0) {
+    styles = llmStyles;
+  } else {
+    // Enrichment did not run — fall back to raw CSV styles.
+    // These are unreliable but keep the pipeline alive.
+    console.warn(
+      `  [WARN] No LLM styles for "${product.title.slice(0, 55)}…" — using raw CSV styles`,
     );
-    styles = MAGSAFE_STYLES_FALLBACK;
-    fallbacksApplied.push('styles:magsafe');
   }
 
-  // Rule 2: Missing models → standard 12-model lineup
+  // ── Models: fallback when VARIATION 1 VALUES is empty ────────────────────
   if (models.length === 0) {
     console.info(
-      `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 55)}…")`
+      `  [FALLBACK] Models → standard 12-model lineup  (title: "${product.title.slice(0, 55)}…")`,
     );
     models = MODELS_FALLBACK;
     fallbacksApplied.push('models:default');
-  }
-
-  // Rule 3: Title-keyword pruning (last resort — fires only when description
-  // parsing failed and the title contains an unambiguous signal).
-  if (styles.length > 0) {
-    const hasCharm = /\bcharm\b/i.test(product.title);
-    const hasGrip  = /\bgrip\b/i.test(product.title);
-
-    let pruned = styles;
-    let tag    = null;
-
-    if (hasCharm && !hasGrip) {
-      pruned = styles.filter(s => !/grip/i.test(s));
-      if (pruned.length !== styles.length) tag = 'pruned:charm_only';
-    } else if (hasGrip && !hasCharm) {
-      pruned = styles.filter(s => !/charm/i.test(s));
-      if (pruned.length !== styles.length) tag = 'pruned:grip_only';
-    }
-
-    if (tag && pruned.length > 0) {
-      console.info(
-        `  [PRUNE]  ${tag}: ${styles.length} → ${pruned.length} style(s)  (title: "${product.title.slice(0, 55)}…")`
-      );
-      styles = pruned;
-      fallbacksApplied.push(tag);
-    }
   }
 
   return { product: { ...product, models, styles }, fallbacksApplied };
@@ -532,14 +414,14 @@ function buildVariants(etsyProduct, classification) {
           { optionName: 'Phone Model', name: model },
           { optionName: 'Style',       name: styleName },
         ],
-        price:            price.toFixed(2),
-        sku:              `Y2K-${charCode}-${modelCode}-${styleCode}`,
-        inventoryPolicy:  'DENY',
-        inventoryItem:    { tracked: true },
-        requiresShipping: true,
-        taxable:          true,
-        weight:           0,
-        weightUnit:       'GRAMS',
+        price:           price.toFixed(2),
+        sku:             `Y2K-${charCode}-${modelCode}-${styleCode}`,
+        inventoryPolicy: 'DENY',
+        inventoryItem:   { tracked: true },
+        taxable:         true,
+        // requiresShipping, weight, weightUnit removed — these fields do not exist
+        // on ProductVariantSetInput in Shopify API 2026-04+. Physical products
+        // default to requiresShipping=true and weight is managed via inventoryItem.
       });
     }
   }
@@ -597,8 +479,11 @@ export function buildShopifyPayload(etsyProduct) {
   ];
 
   // ── Step 2: Title rewrite ──────────────────────────────────────────────────
+  // Pass the raw Etsy title as the second argument so the title generator can
+  // extract a theme keyword (Strawberry, Leopard, Winter …) that makes each
+  // product's Shopify title unique and richer for SEO and AI search.
   const shopifyTitle = needsTitleRewrite(p.title)
-    ? generateTitle(classification)
+    ? generateTitle(classification, p.title)
     : p.title;
 
   // ── Step 3: Variant matrix ─────────────────────────────────────────────────

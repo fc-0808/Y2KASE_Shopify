@@ -34,7 +34,7 @@ loadEnv();
 
 const STORE   = process.env.SHOPIFY_SHOP?.trim() || process.env.SHOPIFY_STORE?.trim();
 const TOKEN   = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN?.trim();
-const VERSION = process.env.SHOPIFY_API_VERSION || '2025-04';
+const VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
 
 if (!STORE || !TOKEN) {
   console.error(

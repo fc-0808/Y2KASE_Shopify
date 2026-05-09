@@ -113,6 +113,6 @@ watchFile(envPath, { interval: 1000 }, async () => {
   if (!newToken || newToken === lastToken) return;
   lastToken = newToken;
   console.log(`\n  🔑 New token detected (${newToken.slice(0, 12)}...) — testing scopes...`);
-  const done = await testAndPush(newToken, env.SHOPIFY_SHOP, env.SHOPIFY_API_VERSION || '2025-04');
+  const done = await testAndPush(newToken, env.SHOPIFY_SHOP, env.SHOPIFY_API_VERSION || '2026-04');
   if (done) process.exit(0);
 });

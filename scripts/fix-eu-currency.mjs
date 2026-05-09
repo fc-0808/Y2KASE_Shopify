@@ -24,7 +24,7 @@ loadEnv(envPath);
 
 const SHOP    = process.env.SHOPIFY_SHOP;
 const TOKEN   = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-const VERSION = process.env.SHOPIFY_API_VERSION || '2025-04';
+const VERSION = process.env.SHOPIFY_API_VERSION || '2026-04';
 const GQL_URL = `https://${SHOP}/admin/api/${VERSION}/graphql.json`;
 
 async function gql(query, variables = {}) {

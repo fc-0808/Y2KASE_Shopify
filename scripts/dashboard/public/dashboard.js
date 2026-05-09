@@ -334,9 +334,9 @@ function renderRow(p) {
   const isConflict = p.status === 'conflict';
   const isMatch    = p.status === 'match';
 
-  // NEW → pre-checked; CONFLICT → unchecked (require explicit acknowledgement); MATCH → disabled
+  // NEW → pre-checked; CONFLICT/MATCH → unchecked but selectable (user can force re-import)
   const checked  = isNew ? 'checked' : '';
-  const disabled = isMatch ? 'disabled' : '';
+  const disabled = '';
   const rowClass = [isConflict ? 'conflict-row' : '', isMatch ? 'match-row' : ''].filter(Boolean).join(' ');
 
   const badgeClass = isNew ? 'badge-new' : isConflict ? 'badge-conflict' : 'badge-match';
@@ -367,6 +367,14 @@ function renderRow(p) {
     ? `<span class="fallback-badge-inline" title="Auto-filled by smart fallback: ${esc(p.fallbacksApplied.join(', '))}">⚠ Fallback</span>`
     : '';
 
+  // Style option chips — mirrors the "Style" option section in Shopify product admin.
+  // Shows the exact bundle options the product will have (Case+Grip+Charm, Case Only, …)
+  const styleChipsHtml = Array.isArray(p.styleOptions) && p.styleOptions.length
+    ? `<div class="style-option-row">${
+        p.styleOptions.map(s => `<span class="style-chip">${esc(s)}</span>`).join('')
+      }</div>`
+    : '';
+
   return `
     <tr data-status="${p.status}" data-handle="${esc(p.handle)}" class="${rowClass}">
       <td class="col-img">${imgCell}</td>
@@ -374,7 +382,10 @@ function renderRow(p) {
         <input type="checkbox" class="row-check" data-handle="${esc(p.handle)}" ${checked} ${disabled}>
       </td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
-      <td title="${esc(p.etsyTitle ?? p.title)}">${esc(p.title)}${fallbackHtml}</td>
+      <td class="col-title" title="${esc(p.etsyTitle ?? p.title)}">
+        <div class="title-text">${esc(p.title)}${fallbackHtml}</div>
+        ${styleChipsHtml}
+      </td>
       <td class="col-handle"><span class="handle">${esc(p.handle)}</span></td>
       <td class="col-variants">${variantCell}</td>
       <td class="col-price">${esc(priceDisplay)}</td>
@@ -785,12 +796,15 @@ function updateRowFromOverride(handle, product) {
   const row = D.auditTbody.querySelector(`tr[data-handle="${CSS.escape(handle)}"]`);
   if (!row) return;
 
-  // cells[3] = Title column
+  // cells[3] = Title column — title lives inside .title-text, chips live in .style-option-row
   const titleCell = row.cells[3];
   if (titleCell) {
+    const titleDiv = titleCell.querySelector('.title-text');
     const existingBadge = titleCell.querySelector('.fallback-badge-inline');
-    titleCell.textContent = product.title;        // clears children
-    if (existingBadge) titleCell.appendChild(existingBadge);
+    if (titleDiv) {
+      titleDiv.textContent = product.title;
+      if (existingBadge) titleDiv.appendChild(existingBadge);
+    }
     titleCell.title = product.etsyTitle ?? product.title;
   }
 
