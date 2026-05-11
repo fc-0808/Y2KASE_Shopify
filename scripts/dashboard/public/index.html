@@ -223,7 +223,7 @@
     <!-- Modal Header -->
     <div class="modal-header">
       <div>
-        <div class="modal-title" id="modal-title">Conflict Inspector</div>
+        <div class="modal-title" id="modal-title">Product Inspector</div>
         <div class="modal-handle" id="modal-handle">y2k-my-melody-grip</div>
       </div>
       <button class="modal-close" id="modal-close" aria-label="Close conflict inspector">✕</button>
@@ -313,6 +313,17 @@
             <div class="after-meta-row">
               <span class="after-meta-label">Status</span>
               <span>DRAFT</span>
+            </div>
+
+            <div class="after-meta-row">
+              <span class="after-meta-label">Category</span>
+              <input type="text"
+                     id="override-category"
+                     class="override-input override-input-inline"
+                     placeholder="gid://shopify/TaxonomyCategory/…"
+                     autocomplete="off"
+                     spellcheck="false"
+                     title="Shopify Taxonomy Category GID — find yours at shopify.dev/docs/api/admin-graphql/latest/objects/TaxonomyCategory">
             </div>
 
           </div><!-- /.after-meta -->
@@ -415,6 +426,37 @@
   </div><!-- /.modal-content -->
 </div><!-- /#conflict-modal -->
 
+
+<!-- ╔══════════════════════════════════════════════════════════════════════╗
+     ║  PANEL 6 — HISTORY RUN DETAIL MODAL (hidden by default)             ║
+     ╚══════════════════════════════════════════════════════════════════════╝ -->
+<div id="history-run-modal"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="history-modal-title"
+     aria-hidden="true">
+
+  <div class="modal-backdrop" id="history-modal-backdrop"></div>
+
+  <div class="modal-content history-run-modal-content">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="history-modal-title">Import Run Details</div>
+        <div class="modal-handle" id="history-modal-runid">—</div>
+      </div>
+      <button class="modal-close" id="history-modal-close" aria-label="Close run details">✕</button>
+    </div>
+
+    <div class="modal-body" id="history-modal-body">
+      <!-- Populated by openHistoryRunModal() in dashboard.js -->
+    </div>
+
+    <div class="modal-footer">
+      <span class="modal-footer-note" id="history-modal-note"></span>
+      <button class="btn btn-ghost" id="history-modal-ok">Close</button>
+    </div>
+  </div>
+</div>
 
 <script src="dashboard.js"></script>
 

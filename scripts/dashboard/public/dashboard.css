@@ -41,10 +41,15 @@ button { font-family: inherit; }
   --badge-conflict-text:   #f0a030;
   --badge-conflict-border: #5a4a2a;
 
-  /* Badge: MATCH */
+  /* Badge: MATCH / IN STORE */
   --badge-match-bg:     #1a2a3a;
   --badge-match-text:   #5a9fd4;
   --badge-match-border: #2a4a5a;
+
+  /* Badge: READY (renamed from generic "New") */
+  --badge-ready-bg:     #1a3a2a;
+  --badge-ready-text:   #4caf72;
+  --badge-ready-border: #2a5a3a;
 
   /* Diff */
   --diff-added:    #1a3a2a;
@@ -159,6 +164,8 @@ body {
 .badge-new      { background: var(--badge-new-bg);      color: var(--badge-new-text);      border-color: var(--badge-new-border); }
 .badge-conflict { background: var(--badge-conflict-bg); color: var(--badge-conflict-text); border-color: var(--badge-conflict-border); }
 .badge-match    { background: var(--badge-match-bg);    color: var(--badge-match-text);    border-color: var(--badge-match-border); }
+.badge-in-store { background: var(--badge-match-bg);    color: var(--badge-match-text);    border-color: var(--badge-match-border); }
+.badge-ready    { background: var(--badge-ready-bg);    color: var(--badge-ready-text);    border-color: var(--badge-ready-border); }
 
 /* ── STATUS BAR ──────────────────────────────────────────────────────────── */
 #status-bar {
@@ -371,8 +378,8 @@ table.audit-table tbody tr:hover {
 table.audit-table tbody tr.conflict-row {
   cursor: pointer;
 }
-table.audit-table tbody tr.match-row td {
-  opacity: .55;
+table.audit-table tbody tr.match-row > td:first-child {
+  border-left: 3px solid var(--badge-match-border);
 }
 
 td.col-price {
@@ -1463,4 +1470,167 @@ table.audit-table td.col-title {
 table.audit-table tbody tr:hover .style-chip {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel-hover));
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+/* ── VARIANT COUNT BUTTON (audit table — triggers tooltip) ───────────────── */
+.variant-count-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.variant-count-btn .variant-badge {
+  pointer-events: none;
+}
+
+/* ── VARIANT TOOLTIP (floating popover on hover) ─────────────────────────── */
+#variant-tooltip {
+  position: fixed;
+  z-index: 800;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0,0,0,.6);
+  padding: 10px 12px;
+  min-width: 180px;
+  max-width: 280px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .12s, transform .12s;
+}
+
+#variant-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vt-tooltip-label {
+  font: 700 9px/1 var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+.vt-tooltip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+}
+
+.vt-tooltip-chip {
+  font: 500 9px/1.5 var(--font-mono);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 20px;
+  padding: 1px 7px;
+  color: var(--accent-hover);
+  white-space: nowrap;
+}
+
+.vt-tooltip-math {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font: 400 10px/1 var(--font-mono);
+  color: var(--muted);
+}
+
+/* ── VARIANT DELETE BUTTON (modal variant explorer) ──────────────────────── */
+.vt-delete-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color .12s, background .12s, border-color .12s;
+  line-height: 1;
+}
+.vt-delete-btn:hover {
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--status-error) 30%, transparent);
+}
+tr.vt-deleted td {
+  opacity: .35;
+  text-decoration: line-through;
+  pointer-events: none;
+}
+tr.vt-deleted .vt-delete-btn {
+  pointer-events: all;
+  text-decoration: none;
+  color: var(--status-ok);
+}
+tr.vt-deleted .vt-delete-btn:hover {
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 30%, transparent);
+}
+
+/* ── HISTORY RUN DETAIL MODAL ─────────────────────────────────────────────── */
+#history-run-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 910;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+#history-run-modal[aria-hidden="true"] { display: none; }
+
+.history-run-modal-content {
+  max-width: 620px;
+}
+
+.history-run-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.history-run-products {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.history-run-product-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.history-run-product-row:last-child { border-bottom: none; }
+.hrp-handle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── INSPECT BUTTON (shown for all row types, not just conflict) ─────────── */
+.btn-inspect-all {
+  opacity: 0;
+  transition: opacity .12s;
+}
+table.audit-table tbody tr:hover .btn-inspect-all {
+  opacity: 1;
 }

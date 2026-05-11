@@ -139,8 +139,17 @@ function cacheDOM() {
     variantExplorerWrap:    $('variant-explorer-wrap'),
 
     // Modal — Auto-Assigned Collections display + manual Tags input
-    collectionChips: $('collection-chips'),
-    overrideTags:    $('override-tags'),
+    collectionChips:   $('collection-chips'),
+    overrideTags:      $('override-tags'),
+
+    // Modal — Taxonomy Category input
+    overrideCategory: $('override-category'),
+
+    // History run modal
+    historyRunModal:         $('history-run-modal'),
+    historyRunModalBackdrop: $('history-modal-backdrop'),
+    historyRunModalClose:    $('history-modal-close'),
+    historyRunModalOk:       $('history-modal-ok'),
   };
 }
 
@@ -314,6 +323,7 @@ function renderAuditRows(products) {
     cb.addEventListener('change', () => { syncMasterCheckbox(); syncImportButton(); });
   });
 
+  // Inspect button — all rows (conflict-row click is additive for keyboard users)
   D.auditTbody.querySelectorAll('.btn-inspect').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); openModal(btn.dataset.handle); });
   });
@@ -323,6 +333,13 @@ function renderAuditRows(products) {
       if (e.target.closest('input, button')) return;
       openModal(row.dataset.handle);
     });
+  });
+
+  // Variant tooltip
+  D.auditTbody.querySelectorAll('.variant-count-btn').forEach(btn => {
+    btn.addEventListener('mouseenter', showVariantTooltip);
+    btn.addEventListener('mouseleave', hideVariantTooltip);
+    btn.addEventListener('mousemove',  positionVariantTooltip);
   });
 
   syncMasterCheckbox();
@@ -336,11 +353,15 @@ function renderRow(p) {
 
   // NEW → pre-checked; CONFLICT/MATCH → unchecked but selectable (user can force re-import)
   const checked  = isNew ? 'checked' : '';
-  const disabled = '';
   const rowClass = [isConflict ? 'conflict-row' : '', isMatch ? 'match-row' : ''].filter(Boolean).join(' ');
 
-  const badgeClass = isNew ? 'badge-new' : isConflict ? 'badge-conflict' : 'badge-match';
-  const badgeLabel = isNew ? 'New'       : isConflict ? 'Conflict'       : 'Match';
+  // Human-readable Shopify Store Status badges
+  const badgeClass = isNew      ? 'badge-ready'
+                   : isConflict ? 'badge-conflict'
+                   :              'badge-in-store';
+  const badgeLabel = isNew      ? 'Ready to Import'
+                   : isConflict ? 'Conflict'
+                   :              'In Store';
 
   // Price: single value or min–max range
   const pMin = Math.round(p.priceMin ?? 0);
@@ -352,39 +373,37 @@ function renderRow(p) {
     ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.title)}" class="thumb" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'thumb-placeholder'}))">`
     : '<span class="thumb-placeholder"></span>';
 
-  // Variant badge: count + dynamic breakdown when both dimensions are known
-  const variantCell = p.modelCount && p.styleCount
-    ? `<span class="variant-badge">${p.variantCount}</span>
-       <small class="variant-math">${p.modelCount}×${p.styleCount}</small>`
-    : `<span class="variant-badge">${p.variantCount}</span>`;
-
-  const actionCell = isConflict
-    ? `<button class="btn btn-ghost btn-sm btn-inspect" data-handle="${esc(p.handle)}" aria-label="Inspect conflict">Inspect</button>`
+  // Variant cell — shows count badge + breakdown; style list surfaced via JS tooltip on hover
+  const stylesAttr = Array.isArray(p.styleOptions) && p.styleOptions.length
+    ? ` data-styles="${esc(p.styleOptions.join('|'))}"`
     : '';
+  const mathHtml = p.modelCount && p.styleCount
+    ? `<small class="variant-math">${p.modelCount}×${p.styleCount}</small>`
+    : '';
+  const variantCell =
+    `<button class="variant-count-btn" data-handle="${esc(p.handle)}"${stylesAttr} tabindex="-1" aria-label="Hover to see style variants">
+       <span class="variant-badge">${p.variantCount}</span>
+       ${mathHtml}
+     </button>`;
 
   // Phase 1 fallback indicator — shown when smart defaults were applied
   const fallbackHtml = Array.isArray(p.fallbacksApplied) && p.fallbacksApplied.length
     ? `<span class="fallback-badge-inline" title="Auto-filled by smart fallback: ${esc(p.fallbacksApplied.join(', '))}">⚠ Fallback</span>`
     : '';
 
-  // Style option chips — mirrors the "Style" option section in Shopify product admin.
-  // Shows the exact bundle options the product will have (Case+Grip+Charm, Case Only, …)
-  const styleChipsHtml = Array.isArray(p.styleOptions) && p.styleOptions.length
-    ? `<div class="style-option-row">${
-        p.styleOptions.map(s => `<span class="style-chip">${esc(s)}</span>`).join('')
-      }</div>`
-    : '';
+  // Inspect button — visible on hover for ALL row types
+  const actionCell =
+    `<button class="btn btn-ghost btn-sm btn-inspect btn-inspect-all" data-handle="${esc(p.handle)}" aria-label="Inspect product">Inspect</button>`;
 
   return `
     <tr data-status="${p.status}" data-handle="${esc(p.handle)}" class="${rowClass}">
       <td class="col-img">${imgCell}</td>
       <td class="col-check">
-        <input type="checkbox" class="row-check" data-handle="${esc(p.handle)}" ${checked} ${disabled}>
+        <input type="checkbox" class="row-check" data-handle="${esc(p.handle)}" ${checked}>
       </td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td class="col-title" title="${esc(p.etsyTitle ?? p.title)}">
         <div class="title-text">${esc(p.title)}${fallbackHtml}</div>
-        ${styleChipsHtml}
       </td>
       <td class="col-handle"><span class="handle">${esc(p.handle)}</span></td>
       <td class="col-variants">${variantCell}</td>
@@ -415,6 +434,66 @@ function syncImportButton() {
   const span = $('selected-count');
   if (span) span.textContent = `(${n})`;
   D.btnImport.disabled = n === 0 || app.importRunning;
+}
+
+// ── Variant tooltip ───────────────────────────────────────────────────────────
+
+let _tooltip = null;
+
+function getTooltip() {
+  if (!_tooltip) {
+    _tooltip = document.createElement('div');
+    _tooltip.id = 'variant-tooltip';
+    document.body.appendChild(_tooltip);
+  }
+  return _tooltip;
+}
+
+function showVariantTooltip(e) {
+  const btn    = e.currentTarget;
+  const raw    = btn.dataset.styles ?? '';
+  const styles = raw ? raw.split('|') : [];
+  const handle = btn.dataset.handle ?? '';
+  const product = app.productMap.get(handle);
+
+  const tt = getTooltip();
+
+  const chipsHtml = styles.length
+    ? `<div class="vt-tooltip-chips">${styles.map(s => `<span class="vt-tooltip-chip">${esc(s)}</span>`).join('')}</div>`
+    : '<span style="color:var(--muted);font-size:11px">No style variants</span>';
+
+  const mathLine = product?.modelCount && product?.styleCount
+    ? `<div class="vt-tooltip-math">${product.modelCount} models × ${product.styleCount} styles = ${product.variantCount} variants</div>`
+    : '';
+
+  tt.innerHTML = `
+    <div class="vt-tooltip-label">Style Options</div>
+    ${chipsHtml}
+    ${mathLine}`;
+
+  positionVariantTooltip(e);
+  tt.classList.add('visible');
+}
+
+function hideVariantTooltip() {
+  _tooltip?.classList.remove('visible');
+}
+
+function positionVariantTooltip(e) {
+  if (!_tooltip) return;
+  const gap = 12;
+  const tt  = _tooltip;
+  const ttW = tt.offsetWidth  || 220;
+  const ttH = tt.offsetHeight || 80;
+  let left  = e.clientX + gap;
+  let top   = e.clientY - ttH / 2;
+
+  if (left + ttW > window.innerWidth  - 8) left = e.clientX - ttW - gap;
+  if (top  < 8)                            top  = 8;
+  if (top  + ttH > window.innerHeight - 8) top  = window.innerHeight - ttH - 8;
+
+  tt.style.left = `${left}px`;
+  tt.style.top  = `${top}px`;
 }
 
 // ── Filter cycle ──────────────────────────────────────────────────────────────
@@ -596,6 +675,9 @@ function renderAfterPane(product) {
   // The full auto-assigned tag list (30+ taxonomy tags) is managed server-side;
   // this input exists solely for manual extras the user wants to bolt on.
   if (D.overrideTags) D.overrideTags.value = '';
+
+  // ── Taxonomy Category — pre-fill from productMap (persists edits across opens)
+  if (D.overrideCategory) D.overrideCategory.value = product.productCategory ?? '';
 }
 
 /**
@@ -647,9 +729,17 @@ async function renderVariantExplorer(handle) {
   try {
     const data = await fetchJson(`/api/product/${encodeURIComponent(handle)}/variants`);
 
-    // Update badge
+    // Store total variant count for removal-delta calculation; get removed set
+    const product    = app.productMap.get(handle) ?? {};
+    product._allVariantCount = data.count;
+    if (product !== null) app.productMap.set(handle, product);
+
+    const removedSet   = new Set(product._removedSkus ?? []);
+    const removedCount = removedSet.size;
+    const activeCount  = data.count - removedCount;
+
     if (D.variantCountBadge) {
-      D.variantCountBadge.textContent = `${data.count} variant${data.count !== 1 ? 's' : ''}`;
+      D.variantCountBadge.textContent = `${activeCount} variant${activeCount !== 1 ? 's' : ''}`;
       D.variantCountBadge.className   = 'diff-badge';
     }
 
@@ -663,8 +753,12 @@ async function renderVariantExplorer(handle) {
     const rows = data.variants.map(v => {
       const modelChanged = v.model !== lastModel;
       lastModel = v.model;
+      const isDeleted  = removedSet.has(v.sku);
+      const rowClass   = [modelChanged ? 'vt-model-start' : '', isDeleted ? 'vt-deleted' : ''].filter(Boolean).join(' ');
+      const deleteTip  = isDeleted ? 'Restore this variant' : 'Remove this variant before import';
+      const deleteIcon = isDeleted ? '↩' : '✕';
       return `
-        <tr class="${modelChanged ? 'vt-model-start' : ''}">
+        <tr class="${rowClass}" data-sku="${esc(v.sku)}">
           <td class="vt-name">
             <span class="vt-model">${esc(v.model)}</span>
             <span class="vt-sep">·</span>
@@ -672,6 +766,9 @@ async function renderVariantExplorer(handle) {
           </td>
           <td class="vt-sku-cell"><code class="vt-sku">${esc(v.sku)}</code></td>
           <td class="vt-price">HK$${v.price.toFixed(2)}</td>
+          <td style="width:40px;text-align:center">
+            <button class="vt-delete-btn" data-sku="${esc(v.sku)}" title="${esc(deleteTip)}">${deleteIcon}</button>
+          </td>
         </tr>`;
     }).join('');
 
@@ -681,16 +778,23 @@ async function renderVariantExplorer(handle) {
           <col class="vt-col-name">
           <col class="vt-col-sku">
           <col class="vt-col-price">
+          <col style="width:40px">
         </colgroup>
         <thead>
           <tr>
             <th class="vt-name">Model · Style</th>
             <th class="vt-sku-cell">SKU</th>
             <th class="vt-price">Price</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>`;
+
+    // Wire delete/restore buttons
+    D.variantExplorerWrap.querySelectorAll('.vt-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => toggleVariantRemoval(handle, btn.dataset.sku));
+    });
 
   } catch (err) {
     D.variantExplorerWrap.innerHTML = `<div class="vt-placeholder vt-error">⚠ ${esc(err.message)}</div>`;
@@ -699,6 +803,52 @@ async function renderVariantExplorer(handle) {
       D.variantCountBadge.className   = 'diff-badge';
     }
   }
+}
+
+/**
+ * Toggle a variant's removal status for the given product handle.
+ * Updates the in-memory productMap, re-styles the row, and sends removedSkus
+ * to the server so the import payload reflects the deletion.
+ */
+function toggleVariantRemoval(handle, sku) {
+  const product = app.productMap.get(handle);
+  if (!product) return;
+
+  const removed = new Set(product._removedSkus ?? []);
+  if (removed.has(sku)) {
+    removed.delete(sku);
+  } else {
+    removed.add(sku);
+  }
+  product._removedSkus = [...removed];
+  app.productMap.set(handle, product);
+
+  // Visually toggle the row
+  const row = D.variantExplorerWrap?.querySelector(`tr[data-sku="${CSS.escape(sku)}"]`);
+  if (row) {
+    const isNowDeleted = removed.has(sku);
+    row.classList.toggle('vt-deleted', isNowDeleted);
+    const btn = row.querySelector('.vt-delete-btn');
+    if (btn) {
+      btn.textContent = isNowDeleted ? '↩' : '✕';
+      btn.title       = isNowDeleted ? 'Restore this variant' : 'Remove this variant before import';
+    }
+  }
+
+  // Update the variant count badge
+  const activeCount = (app.productMap.get(handle)?._allVariantCount ?? 0) - removed.size;
+  if (D.variantCountBadge) {
+    D.variantCountBadge.textContent = `${activeCount} variant${activeCount !== 1 ? 's' : ''}`;
+  }
+
+  // Push to server
+  fetchJson(`/api/product/${encodeURIComponent(handle)}/override`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ removedSkus: [...removed] }),
+  })
+    .then(r => addLogLine('success', '✓', `Variant list updated: ${r.variantCount} variants remaining`, handle))
+    .catch(err => addLogLine('error', '✗', `Variant update failed: ${err.message}`, handle));
 }
 
 // ── Override helpers ──────────────────────────────────────────────────────────
@@ -720,12 +870,8 @@ function commitOverrides(handle) {
   const newTitle       = D.overrideTitle.value.trim();
   const newProductType = D.overrideProductType.value.trim();
   const newBasePrice   = parseFloat(D.overrideBasePrice.value);
-  // Description: do NOT trim — HTML whitespace (indentation, newlines) is
-  // intentional and must be preserved exactly as the user typed it.
   const newBodyHtml    = D.overrideDescription?.value ?? null;
-  // Additional tags: comma-separated string the user typed in the Tags input.
-  // We parse, lowercase, and deduplicate before merging; the field is NOT
-  // pre-filled with existing auto-tags so this only captures net-new additions.
+  const newCategory    = (D.overrideCategory?.value ?? '').trim();
   const additionalTags = (D.overrideTags?.value ?? '')
     .split(',')
     .map(t => t.trim().toLowerCase())
@@ -733,20 +879,22 @@ function commitOverrides(handle) {
 
   // Build a diff patch — only include fields that actually changed
   const patch = {};
-  if (newTitle       && newTitle !== product.title)                              patch.title       = newTitle;
-  if (newProductType && newProductType !== product.collection)                   patch.productType = newProductType;
+  if (newTitle       && newTitle !== product.title)                              patch.title           = newTitle;
+  if (newProductType && newProductType !== product.collection)                   patch.productType     = newProductType;
   if (!isNaN(newBasePrice) && newBasePrice > 0 &&
-      Math.abs(newBasePrice - (product.priceMin ?? 0)) > 0.005)                 patch.basePrice   = newBasePrice;
-  if (newBodyHtml !== null && newBodyHtml !== (product.bodyHtml ?? ''))          patch.bodyHtml    = newBodyHtml;
-  if (additionalTags.length)                                                     patch.tags        = additionalTags;
+      Math.abs(newBasePrice - (product.priceMin ?? 0)) > 0.005)                 patch.basePrice       = newBasePrice;
+  if (newBodyHtml !== null && newBodyHtml !== (product.bodyHtml ?? ''))          patch.bodyHtml        = newBodyHtml;
+  if (newCategory  && newCategory !== (product.productCategory ?? ''))           patch.productCategory = newCategory;
+  if (additionalTags.length)                                                     patch.tags            = additionalTags;
 
   if (!Object.keys(patch).length) return null; // nothing changed
 
   // ── 1. Update client-side productMap (synchronous) ─────────────────────
   const updated = { ...product };
-  if (patch.title)                   updated.title      = patch.title;
-  if (patch.productType)             updated.collection = patch.productType;
-  if (patch.bodyHtml !== undefined)  updated.bodyHtml   = patch.bodyHtml;
+  if (patch.title)                   updated.title           = patch.title;
+  if (patch.productType)             updated.collection      = patch.productType;
+  if (patch.bodyHtml !== undefined)  updated.bodyHtml        = patch.bodyHtml;
+  if (patch.productCategory)         updated.productCategory = patch.productCategory;
   if (patch.tags?.length) {
     // Merge additional tags into existing tag array; deduplicate via Set.
     updated.tags = [...new Set([...(product.tags ?? []), ...patch.tags])];
@@ -970,7 +1118,7 @@ function handleSseEvent(data) {
         if (row) {
           row.classList.add('row-imported');
           const badge = row.querySelector('.badge');
-          if (badge) { badge.className = 'badge badge-match'; badge.textContent = 'Imported'; }
+          if (badge) { badge.className = 'badge badge-in-store'; badge.textContent = 'Imported'; }
           // Uncheck the row so it won't be accidentally re-queued
           const cb = row.querySelector('.row-check');
           if (cb) cb.checked = false;
@@ -1106,19 +1254,19 @@ function renderHistory(runs) {
     return;
   }
 
-  D.historyTbody.innerHTML = runs.map(run => {
+  D.historyTbody.innerHTML = runs.map((run, idx) => {
     const hasErrors  = (run.errors  ?? 0) > 0;
     const hasCreated = (run.created ?? 0) > 0;
 
     const badgeClass = hasErrors  ? 'badge-conflict'
-                     : hasCreated ? 'badge-new'
-                     :              'badge-match';
+                     : hasCreated ? 'badge-ready'
+                     :              'badge-in-store';
     const badgeText  = hasErrors  ? 'Partial'
                      : hasCreated ? 'Complete'
                      :              'Empty';
 
     return `
-      <tr>
+      <tr style="cursor:pointer" data-run-idx="${idx}" title="Click to view run details">
         <td class="hist-id">${esc(run.runId ?? '—')}</td>
         <td class="hist-ts">${esc(fmtTs(run.timestamp))}</td>
         <td class="text-ok  mono">${run.created ?? 0}</td>
@@ -1128,6 +1276,64 @@ function renderHistory(runs) {
         <td class="hist-ts">${esc(fmtDur(run.durationMs))}</td>
       </tr>`;
   }).join('');
+
+  // Store runs for click handler access
+  app.historyRuns = runs;
+
+  // Wire click on each row → history detail modal
+  D.historyTbody.querySelectorAll('tr[data-run-idx]').forEach(row => {
+    row.addEventListener('click', () => {
+      const run = app.historyRuns?.[parseInt(row.dataset.runIdx, 10)];
+      if (run) openHistoryRunModal(run);
+    });
+  });
+}
+
+function openHistoryRunModal(run) {
+  const modal   = $('history-run-modal');
+  const body    = $('history-modal-body');
+  const runIdEl = $('history-modal-runid');
+  const noteEl  = $('history-modal-note');
+  if (!modal || !body) return;
+
+  runIdEl.textContent = run.runId ?? '—';
+
+  const created = run.created ?? 0;
+  const skipped = run.skipped ?? 0;
+  const errors  = run.errors  ?? 0;
+  const total   = created + skipped + errors;
+
+  noteEl.textContent = `${fmtTs(run.timestamp)} · ${fmtDur(run.durationMs)}`;
+
+  // Stats grid
+  const statsHtml = `
+    <div class="history-run-stats">
+      <div class="stat-box ok" ><div class="stat-label">Created</div><div class="stat-value">${created}</div></div>
+      <div class="stat-box warn"><div class="stat-label">Skipped</div><div class="stat-value">${skipped}</div></div>
+      <div class="stat-box ${errors > 0 ? 'err' : ''}"><div class="stat-label">Errors</div><div class="stat-value">${errors}</div></div>
+      <div class="stat-box"><div class="stat-label">Total</div><div class="stat-value">${total}</div></div>
+    </div>`;
+
+  // Product handle list
+  const handles = Array.isArray(run.handles) ? run.handles : [];
+  const productListHtml = handles.length
+    ? `<div class="history-run-products">
+         ${handles.map(h => `
+           <div class="history-run-product-row">
+             <span class="hrp-handle">${esc(h)}</span>
+           </div>`).join('')}
+       </div>`
+    : '<p style="font-size:12px;color:var(--muted);padding:8px 0">No product handle data recorded for this run.</p>';
+
+  body.innerHTML = statsHtml + productListHtml;
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeHistoryRunModal() {
+  const modal = $('history-run-modal');
+  if (modal) modal.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1166,13 +1372,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncImportButton();
   });
 
-  // Modal
+  // Conflict Inspector modal
   D.modalClose.addEventListener('click', closeModal);
   D.modalBackdrop.addEventListener('click', closeModal);
   D.btnModalSkip.addEventListener('click', closeModal);
   D.btnModalAck.addEventListener('click', acknowledgeAndSelect);
   D.btnSaveOverrides?.addEventListener('click', saveOverrides);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // History run detail modal
+  D.historyRunModalClose?.addEventListener('click', closeHistoryRunModal);
+  D.historyRunModalBackdrop?.addEventListener('click', closeHistoryRunModal);
+  D.historyRunModalOk?.addEventListener('click', closeHistoryRunModal);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal(); closeHistoryRunModal(); }
+  });
 
   // ── Bootstrap sequence ─────────────────────────────────────────────────────
 

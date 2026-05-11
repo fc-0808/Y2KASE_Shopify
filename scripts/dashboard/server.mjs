@@ -309,6 +309,9 @@ async function buildPreview() {
         shopify:      diff.shopify,
         diffs:        diff.diffs,
         shopifyId:    shopifyProduct?.id ?? null,
+        // Shopify taxonomy category — editable in the Product Inspector modal.
+        // Starts null; user can set a GID like gid://shopify/TaxonomyCategory/…
+        productCategory: payload.productCategory ?? null,
       };
     });
 
@@ -761,7 +764,7 @@ app.get('/api/product/:handle/variants', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post('/api/product/:handle/override', (req, res) => {
   const { handle } = req.params;
-  const { title, productType, basePrice, bodyHtml, tags } = req.body ?? {};
+  const { title, productType, basePrice, bodyHtml, tags, productCategory, removedSkus } = req.body ?? {};
 
   const payload = _cache?.payloadMap?.get(handle) ?? null;
   if (!payload) {
@@ -815,6 +818,25 @@ app.post('/api/product/:handle/override', (req, res) => {
     }
   }
 
+  // Taxonomy category override (GID string, e.g. gid://shopify/TaxonomyCategory/…)
+  if (typeof productCategory === 'string' && productCategory.trim()) {
+    payload.productCategory = productCategory.trim();
+  }
+
+  // Variant deletion — remove variants whose SKU is in removedSkus[]
+  if (Array.isArray(removedSkus) && removedSkus.length) {
+    const removed = new Set(removedSkus);
+    payload.variants = payload.variants.filter(v => !removed.has(v.sku));
+    // Re-sync style option values to only those still present in variants
+    const usedStyles = new Set(payload.variants.map(v =>
+      v.optionValues?.find(o => o.optionName === 'Style')?.name
+    ).filter(Boolean));
+    if (payload.productOptions) {
+      const styleOpt = payload.productOptions.find(o => o.name === 'Style');
+      if (styleOpt) styleOpt.values = styleOpt.values.filter(val => usedStyles.has(val.name));
+    }
+  }
+
   payload._overriddenAt = new Date().toISOString();
 
   res.json({
@@ -823,6 +845,7 @@ app.post('/api/product/:handle/override', (req, res) => {
     appliedTitle:       payload.title,
     appliedProductType: payload.productType,
     tagCount:           payload.tags.length,
+    variantCount:       payload.variants.length,
   });
 });
 

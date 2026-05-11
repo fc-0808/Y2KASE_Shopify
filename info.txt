@@ -5,6 +5,18 @@ Implement the best possible solution in the world that the best and biggest comp
 To do:
 - create script to import etsy csv 
 
-- conversion update:
-    - increase font-size of price
-    - 
+
+
+
+
+Problems:
+- Match? (Confusing)
+- Prouducts are greyed out? (What the fuck does that mean?)
+
+- Do not fucking show the variants for each product under the title. 
+Only show it when i hover on the variant column of each product. 
+Also, add a feature to be able to update the variant for each product.
+
+- Import history is fucking retarded as no interactions with them when i click on it
+
+- Fill out Category section on shopify website for each product 
