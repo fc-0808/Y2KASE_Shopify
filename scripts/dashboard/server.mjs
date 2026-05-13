@@ -25,14 +25,15 @@ import { buildShopifyPayload } from '../lib/transform.mjs';
 import { enrichProductStyles } from '../lib/llm-enrich.mjs';
 import { loadProduct }         from '../lib/loader.mjs';
 import { shopifyGql, resolveLocationId } from '../shopify-client.mjs';
+import { isTaxonomyCachePopulated, taxonomyCacheFetchedAt, resolveCategoryMetafieldsForDisplay } from '../lib/category-metafields.mjs';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const __dirname    = dirname(fileURLToPath(import.meta.url));
 const ROOT         = resolve(__dirname, '../..');
 const PUBLIC_DIR   = join(__dirname, 'public');
 const ENV_PATH     = resolve(ROOT, '.env');
-const CSV_PATH     = resolve(ROOT, 'EtsyListingsDownload.csv');
-const HISTORY_PATH = resolve(ROOT, 'import-history.json');
+const CSV_PATH     = resolve(ROOT, 'data/EtsyListingsDownload.csv');
+const HISTORY_PATH = resolve(ROOT, 'data/import-history.json');
 
 const PORT          = 3000;
 const LOCATION_NAME = 'FLAT D 10/F BLOCK 6 LILY MANSION';
@@ -99,6 +100,13 @@ const PRODUCT_FIELDS = `
   status
   productType
   tags
+  productCategory {
+    productTaxonomyNode {
+      id
+      name
+      fullName
+    }
+  }
   variants(first: 250) { edges { node { price } } }
   media(first: 50)     { edges { node { id }    } }
 `;
@@ -139,39 +147,51 @@ async function fetchShopifyProducts(handles) {
 
 function computeDiff(payload, shopifyProduct) {
   const etsyPrices = payload.variants.map(v => parseFloat(v.price));
+
+  // Normalise the taxonomy node ID: payload stores it as a full GID string;
+  // Shopify returns it back as a full GID — compare them directly.
+  const etsyCategory = payload.productCategory?.productTaxonomyNodeId ?? null;
+
   const etsySide = {
-    title:        payload.title,
-    variantCount: payload.variants.length,
-    priceRange:   `${Math.min(...etsyPrices).toFixed(2)}–${Math.max(...etsyPrices).toFixed(2)}`,
-    imageCount:   payload._images.length,
-    productType:  payload.productType,
-    status:       'DRAFT',
+    title:           payload.title,
+    variantCount:    payload.variants.length,
+    priceRange:      `${Math.min(...etsyPrices).toFixed(2)}–${Math.max(...etsyPrices).toFixed(2)}`,
+    imageCount:      payload._images.length,
+    productType:     payload.productType,
+    status:          'DRAFT',
+    productCategory: etsyCategory,
   };
 
   if (!shopifyProduct) {
     return { status: 'new', etsy: etsySide, shopify: null, diffs: [] };
   }
 
-  const spPrices = shopifyProduct.variants.edges.map(e => parseFloat(e.node.price));
+  const spPrices        = shopifyProduct.variants.edges.map(e => parseFloat(e.node.price));
+  const shopifyCategory = shopifyProduct.productCategory?.productTaxonomyNode?.id ?? null;
+
   const shopifySide = {
-    title:        shopifyProduct.title,
-    variantCount: shopifyProduct.variants.edges.length,
-    priceRange:   spPrices.length
+    title:           shopifyProduct.title,
+    variantCount:    shopifyProduct.variants.edges.length,
+    priceRange:      spPrices.length
       ? `${Math.min(...spPrices).toFixed(2)}–${Math.max(...spPrices).toFixed(2)}`
       : '—',
-    imageCount:   shopifyProduct.media.edges.length,
-    productType:  shopifyProduct.productType ?? '',
-    status:       shopifyProduct.status,
+    imageCount:      shopifyProduct.media.edges.length,
+    productType:     shopifyProduct.productType ?? '',
+    status:          shopifyProduct.status,
+    productCategory: shopifyCategory,
+    // Expose the human-readable category name for the dashboard diff pane
+    _categoryName:   shopifyProduct.productCategory?.productTaxonomyNode?.name ?? null,
   };
 
   const diffs = [];
-  const cmp = (field, a, b) => { if (String(a) !== String(b)) diffs.push({ field, etsy: a, shopify: b }); };
+  const cmp = (field, a, b) => { if (String(a ?? '') !== String(b ?? '')) diffs.push({ field, etsy: a, shopify: b }); };
 
-  cmp('title',        etsySide.title,        shopifySide.title);
-  cmp('variantCount', etsySide.variantCount,  shopifySide.variantCount);
-  cmp('priceRange',   etsySide.priceRange,    shopifySide.priceRange);
-  cmp('imageCount',   etsySide.imageCount,    shopifySide.imageCount);
-  cmp('productType',  etsySide.productType,   shopifySide.productType);
+  cmp('title',           etsySide.title,           shopifySide.title);
+  cmp('variantCount',    etsySide.variantCount,     shopifySide.variantCount);
+  cmp('priceRange',      etsySide.priceRange,       shopifySide.priceRange);
+  cmp('imageCount',      etsySide.imageCount,       shopifySide.imageCount);
+  cmp('productType',     etsySide.productType,      shopifySide.productType);
+  cmp('productCategory', etsySide.productCategory,  shopifySide.productCategory);
 
   return {
     status:  diffs.length === 0 ? 'match' : 'conflict',
@@ -309,9 +329,16 @@ async function buildPreview() {
         shopify:      diff.shopify,
         diffs:        diff.diffs,
         shopifyId:    shopifyProduct?.id ?? null,
-        // Shopify taxonomy category — editable in the Product Inspector modal.
-        // Starts null; user can set a GID like gid://shopify/TaxonomyCategory/…
-        productCategory: payload.productCategory ?? null,
+        // Shopify taxonomy category — expose as plain GID string for the UI input.
+        // The payload stores it as { productTaxonomyNodeId: '...' }; we unwrap
+        // it here so the Category field doesn't show "[object Object]".
+        productCategory: payload.productCategory?.productTaxonomyNodeId
+          ?? (typeof payload.productCategory === 'string' ? payload.productCategory : null),
+
+        // Resolved category metafields — human-readable for the dashboard inspector.
+        // Shape: [{ key, name, values: string[] }]
+        // Empty array means the pipeline produced no metafields for this product.
+        categoryMetafields: resolveCategoryMetafieldsForDisplay(payload.metafields ?? []),
       };
     });
 
@@ -533,10 +560,13 @@ app.get('/api/import/stream', async (req, res) => {
 
       emit({ type: 'product_start', index: idx, total: handles.length, handle, title: payload.title });
 
-      // If the user explicitly selected a MATCH product, skip the existence check
-      // so productSet runs as an upsert (updates the partial/existing product).
+      // CONFLICT and MATCH products already exist in Shopify — bypass the skip
+      // check so productSet runs as an upsert.  The loader will look up the
+      // existing product ID and pass it in the mutation input for a true update.
+      // NEW products (and handles missing from cache) use skipExisting=true so
+      // the existence check still runs as a safety guard before creation.
       const cachedStatus = _cache?.results?.find(r => r.handle === handle)?.status;
-      const skipExisting = cachedStatus === 'match' ? false : true;
+      const skipExisting = cachedStatus !== 'conflict' && cachedStatus !== 'match';
 
       try {
         const result = await loadProduct(payload, locationId, {
@@ -552,7 +582,7 @@ app.get('/api/import/stream', async (req, res) => {
                status: result.status, variantCount: result.variantCount ?? null,
                mediaCount: result.mediaCount ?? null, productId: result.productId ?? null });
 
-        summary[result.status === 'created' ? 'created' : 'skipped']++;
+        summary[result.status === 'created' || result.status === 'updated' ? 'created' : 'skipped']++;
 
       } catch (err) {
         emit({ type: 'error', index: idx, total: handles.length, handle, msg: err.message });
@@ -762,9 +792,47 @@ app.get('/api/product/:handle/variants', async (req, res) => {
 //
 // Returns: { ok: true, handle, appliedTitle, appliedProductType, tagCount }
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── Style / Model lookup tables (mirrors transform.mjs — single source for server-side ops) ──
+
+// Canonical prices per bundle style (no strap — strap is normalised to grip at CSV parse time)
+const _STYLE_PRICES = {
+  'Case+Grip+Charm': 409.89,
+  'Case+Grip':       350.11,
+  'Case+Charm':      350.11,
+  'Case Only':       261.86,
+  'Grip Only':       170.76,
+  'Charm Only':      113.82,
+};
+
+// SKU suffix codes per bundle style
+const _STYLE_SKU_CODE = {
+  'Case+Grip+Charm': 'CGC',
+  'Case+Grip':       'CG',
+  'Case+Charm':      'CC',
+  'Case Only':       'CO',
+  'Grip Only':       'GO',
+  'Charm Only':      'CHO',
+};
+
+// SKU model codes — mirrors MODEL_SKU_CODE in transform.mjs
+const _MODEL_SKU_CODE = {
+  'iPhone 17 Pro Max': '17PM',
+  'iPhone 17 Pro':     '17PR',
+  'iPhone 17':         '17',
+  'iPhone 16 Pro Max': '16PM',
+  'iPhone 16 Pro':     '16PR',
+  'iPhone 16':         '16',
+  'iPhone 15 Pro Max': '15PM',
+  'iPhone 15 Pro':     '15PR',
+  'iPhone 15':         '15',
+  'iPhone 14 Pro Max': '14PM',
+  'iPhone 14 Pro':     '14PR',
+  'iPhone 14/13':      '1413',
+};
+
 app.post('/api/product/:handle/override', (req, res) => {
   const { handle } = req.params;
-  const { title, productType, basePrice, bodyHtml, tags, productCategory, removedSkus } = req.body ?? {};
+  const { title, productType, basePrice, bodyHtml, tags, productCategory, removedSkus, styleRemaps, addStyles } = req.body ?? {};
 
   const payload = _cache?.payloadMap?.get(handle) ?? null;
   if (!payload) {
@@ -818,9 +886,10 @@ app.post('/api/product/:handle/override', (req, res) => {
     }
   }
 
-  // Taxonomy category override (GID string, e.g. gid://shopify/TaxonomyCategory/…)
+  // Taxonomy category override — store as the object structure productSet requires.
+  // Client sends a plain GID string; we wrap it here before it reaches the mutation.
   if (typeof productCategory === 'string' && productCategory.trim()) {
-    payload.productCategory = productCategory.trim();
+    payload.productCategory = { productTaxonomyNodeId: productCategory.trim() };
   }
 
   // Variant deletion — remove variants whose SKU is in removedSkus[]
@@ -834,6 +903,154 @@ app.post('/api/product/:handle/override', (req, res) => {
     if (payload.productOptions) {
       const styleOpt = payload.productOptions.find(o => o.name === 'Style');
       if (styleOpt) styleOpt.values = styleOpt.values.filter(val => usedStyles.has(val.name));
+    }
+  }
+
+  // Style remap — bulk-rename a style name across all affected variants.
+  //
+  // For each { from, to } pair:
+  //   1. Update the 'Style' optionValue on every matching variant.
+  //   2. Recalculate the SKU suffix (last dash-segment) using _REMAP_SKU_CODE.
+  //   3. Recalculate the variant price from _REMAP_PRICES (when a known style).
+  //   4. Patch productOptions.Style.values (rename in-place or merge if target exists).
+  // After all remaps, deduplicate variants by (Phone Model × Style) key so
+  // merging two styles into one never leaves ghost duplicates in the payload.
+  if (Array.isArray(styleRemaps) && styleRemaps.length) {
+    for (const { from, to } of styleRemaps) {
+      if (!from || !to || from === to) continue;
+
+      // ── Special sentinel: remove all variants of `from` style ─────────────
+      // The client sends `to === '__REMOVE__'` when the user selects
+      // "✕ Remove this style" from the dropdown in the remap panel.
+      // This is equivalent to deleting every variant row of that style.
+      if (to === '__REMOVE__') {
+        payload.variants = payload.variants.filter(v => {
+          const styleVal = v.optionValues?.find(o => o.optionName === 'Style');
+          return styleVal?.name !== from;
+        });
+        if (payload.productOptions) {
+          const styleOpt = payload.productOptions.find(o => o.name === 'Style');
+          if (styleOpt) styleOpt.values = styleOpt.values.filter(v => v.name !== from);
+        }
+        continue;
+      }
+
+      const newStyleCode = _STYLE_SKU_CODE[to]
+        ?? to.replace(/[^a-zA-Z0-9+]/g, '').slice(0, 4).toUpperCase();
+      const newPrice = _STYLE_PRICES[to] ?? null;
+
+      // ── 1 & 2 & 3: Update every variant whose Style matches `from` ──────────
+      for (const variant of payload.variants) {
+        const styleVal = variant.optionValues?.find(o => o.optionName === 'Style');
+        if (!styleVal || styleVal.name !== from) continue;
+
+        styleVal.name = to;
+
+        // Recalculate SKU suffix — format is always Y2K-CHAR-MODEL-STYLE
+        const skuParts = variant.sku.split('-');
+        skuParts[skuParts.length - 1] = newStyleCode;
+        variant.sku = skuParts.join('-');
+
+        // Recalculate price when the target style has a canonical price
+        if (newPrice !== null) {
+          variant.price = newPrice.toFixed(2);
+        }
+      }
+
+      // ── 4: Patch productOptions.Style values list ─────────────────────────
+      if (payload.productOptions) {
+        const styleOpt = payload.productOptions.find(o => o.name === 'Style');
+        if (styleOpt) {
+          const fromIdx  = styleOpt.values.findIndex(v => v.name === from);
+          const toExists = styleOpt.values.some(v => v.name === to);
+          if (fromIdx !== -1) {
+            if (toExists) {
+              // Target already present — drop the old entry (variants merged)
+              styleOpt.values.splice(fromIdx, 1);
+            } else {
+              // Rename in place so ordering is preserved
+              styleOpt.values[fromIdx] = { name: to };
+            }
+          }
+        }
+      }
+    }
+
+    // ── Deduplication: (Phone Model × Style) must be unique after remaps ─────
+    // If two styles were remapped to the same target, variants sharing both the
+    // same model AND the same new style would create a duplicate option combo
+    // that Shopify rejects.  Keep the first occurrence; discard subsequent ones.
+    const seenCombos = new Set();
+    payload.variants = payload.variants.filter(variant => {
+      const model = variant.optionValues?.find(o => o.optionName === 'Phone Model')?.name ?? '';
+      const style = variant.optionValues?.find(o => o.optionName === 'Style')?.name ?? '';
+      const key   = `${model}||${style}`;
+      if (seenCombos.has(key)) return false;
+      seenCombos.add(key);
+      return true;
+    });
+  }
+
+  // Add new style — generate fresh variants for every current Phone Model × new style.
+  //
+  // Extracts the char code from the first existing SKU (format Y2K-CHAR-MODEL-STYLE)
+  // so new SKUs are consistent with the product's existing ones.
+  // Skips styles already present on the product (idempotent).
+  if (Array.isArray(addStyles) && addStyles.length) {
+    // Extract char code from the first variant's SKU
+    const firstSku  = payload.variants[0]?.sku ?? '';
+    const charCode  = firstSku.split('-')[1] ?? 'MISC';
+
+    // Collect unique models in their existing order
+    const seenModels    = [];
+    const seenModelSet  = new Set();
+    for (const v of payload.variants) {
+      const model = v.optionValues?.find(o => o.optionName === 'Phone Model')?.name;
+      if (model && !seenModelSet.has(model)) {
+        seenModels.push(model);
+        seenModelSet.add(model);
+      }
+    }
+
+    for (const styleName of addStyles) {
+      if (!styleName || typeof styleName !== 'string') continue;
+
+      // Idempotent — skip if style already exists on this product
+      const alreadyExists = payload.variants.some(v =>
+        v.optionValues?.find(o => o.optionName === 'Style')?.name === styleName
+      );
+      if (alreadyExists) continue;
+
+      const newStyleCode = _STYLE_SKU_CODE[styleName]
+        ?? styleName.replace(/[^a-zA-Z0-9+]/g, '').slice(0, 4).toUpperCase();
+      const newPrice = (_STYLE_PRICES[styleName]
+        ?? parseFloat(payload.variants[0]?.price ?? 0)).toFixed(2);
+
+      // Generate one variant per model × new style
+      for (const model of seenModels) {
+        const modelCode = _MODEL_SKU_CODE[model]
+          ?? model.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
+
+        payload.variants.push({
+          optionValues: [
+            { optionName: 'Phone Model', name: model },
+            { optionName: 'Style',       name: styleName },
+          ],
+          price:           newPrice,
+          sku:             `Y2K-${charCode}-${modelCode}-${newStyleCode}`,
+          inventoryPolicy: 'DENY',
+          inventoryItem:   { tracked: true },
+          taxable:         true,
+        });
+      }
+
+      // Register the new style in productOptions so Shopify sees it
+      if (payload.productOptions) {
+        const styleOpt = payload.productOptions.find(o => o.name === 'Style');
+        if (styleOpt && !styleOpt.values.some(v => v.name === styleName)) {
+          styleOpt.values.push({ name: styleName });
+        }
+      }
     }
   }
 
@@ -865,6 +1082,20 @@ server.listen(PORT, async () => {
   console.log(`  Store:   ${STORE ?? '(not set)'}`);
   console.log(`  CSV:     ${CSV_PATH}`);
   console.log(`  History: ${HISTORY_PATH}`);
+
+  // ── Taxonomy cache health check ────────────────────────────────────────
+  if (isTaxonomyCachePopulated()) {
+    const fetchedAt = taxonomyCacheFetchedAt();
+    console.log(`  Taxonomy cache: OK (fetched ${fetchedAt ?? 'unknown'})`);
+  } else {
+    console.log('');
+    console.log('  ⚠  Taxonomy cache missing — category metafields will use');
+    console.log('     hardcoded GIDs only (case-type, material, transparency).');
+    console.log('     Run the following to unlock all 25 attributes:');
+    console.log('     node scripts/lib/fetch-taxonomy-attrs.mjs');
+    console.log('');
+  }
+
   console.log('  Press Ctrl+C to stop.');
   console.log('');
   await open(url);

@@ -31,7 +31,7 @@ const ROOT      = resolve(__dirname, '..');
 const ARGS    = process.argv.slice(2);
 const DRY_RUN = !ARGS.includes('--apply');
 
-const CSV_PATH       = resolve(ROOT, 'EtsyListingsDownload.csv');
+const CSV_PATH       = resolve(ROOT, 'data/EtsyListingsDownload.csv');
 const LOCATION_NAME  = 'FLAT D 10/F BLOCK 6 LILY MANSION';
 
 // ── Extraction helpers ────────────────────────────────────────────────────────

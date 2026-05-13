@@ -30,6 +30,9 @@ Desktop.ini
 dist/
 *.tsbuildinfo
 
+# Import data — generated outputs (source CSV stays tracked)
+data/import-history.json
+
 # Logs & temp
 *.log
 .cache/

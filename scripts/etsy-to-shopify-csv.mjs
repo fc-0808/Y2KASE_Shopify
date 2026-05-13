@@ -16,7 +16,7 @@
  *   node scripts/etsy-to-shopify-csv.mjs
  *
  * Output:
- *   shopify-import.csv  (in project root, ready to upload via Shopify Admin)
+ *   data/shopify-import.csv  (ready to upload via Shopify Admin)
  *
  * NOTE: Titles are carried over from Etsy as-is. Run Phase 01 SEO rewrite
  * before the final import — update the Title and SEO Title columns.
@@ -31,8 +31,8 @@ const ROOT      = resolve(__dirname, '..');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const INPUT_FILE  = resolve(ROOT, 'EtsyListingsDownload.csv');
-const OUTPUT_FILE = resolve(ROOT, 'shopify-import.csv');
+const INPUT_FILE  = resolve(ROOT, 'data/EtsyListingsDownload.csv');
+const OUTPUT_FILE = resolve(ROOT, 'data/shopify-import.csv');
 
 const VENDOR       = 'Y2KASE';
 const PRODUCT_TYPE = 'Phone Case';

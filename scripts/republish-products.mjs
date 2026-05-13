@@ -9,6 +9,10 @@
  * to 'draft' (unpublish) then immediately back to 'active' (republish).
  * This triggers Shopify's product publishing pipeline which rebuilds the
  * complete storefront index for each product.
+ *
+ * NOTE: Prefer graphql-republish.mjs over this script — it uses the GraphQL
+ * productSet mutation (2026-04 recommended) and avoids REST product write endpoints
+ * which are deprecated. This file retains the REST approach for legacy reference only.
  */
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';

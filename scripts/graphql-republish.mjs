@@ -1,7 +1,10 @@
 /**
- * Force-publish all products via GraphQL productUpdate mutation.
+ * Force-publish all products via GraphQL productSet mutation.
  * Sets status: ACTIVE explicitly, which triggers the full
  * Shopify publication pipeline including storefront index rebuild.
+ *
+ * Uses productSet (2026-04 recommended) instead of the deprecated
+ * productUpdate(input: ProductInput!) mutation.
  */
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -55,17 +58,17 @@ for (let i = 0; i < allProducts.length; i++) {
   const { id, title } = allProducts[i];
   process.stdout.write(`  [${String(i + 1).padStart(3)}/${allProducts.length}] ${title.slice(0, 55)}\r`);
 
-  // First set to draft
+  // First set to draft — productSet is the 2026-04 replacement for productUpdate
   const draftRes = await gql(`
-    mutation($input: ProductInput!) {
-      productUpdate(input: $input) {
+    mutation productSet($synchronous: Boolean!, $input: ProductSetInput!) {
+      productSet(synchronous: $synchronous, input: $input) {
         product { id status }
-        userErrors { field message }
+        userErrors { field message code }
       }
     }
-  `, { input: { id, status: 'DRAFT' } });
+  `, { synchronous: true, input: { id, status: 'DRAFT' } });
 
-  const draftErrs = draftRes.data?.productUpdate?.userErrors || [];
+  const draftErrs = draftRes.data?.productSet?.userErrors || [];
   if (draftRes.errors || draftErrs.length > 0) {
     const msg = draftRes.errors?.[0]?.message || draftErrs[0]?.message;
     console.error(`\n  Draft error: ${title.slice(0, 30)}: ${msg}`);
@@ -77,15 +80,15 @@ for (let i = 0; i < allProducts.length; i++) {
 
   // Then set back to active
   const activeRes = await gql(`
-    mutation($input: ProductInput!) {
-      productUpdate(input: $input) {
+    mutation productSet($synchronous: Boolean!, $input: ProductSetInput!) {
+      productSet(synchronous: $synchronous, input: $input) {
         product { id status }
-        userErrors { field message }
+        userErrors { field message code }
       }
     }
-  `, { input: { id, status: 'ACTIVE' } });
+  `, { synchronous: true, input: { id, status: 'ACTIVE' } });
 
-  const activeErrs = activeRes.data?.productUpdate?.userErrors || [];
+  const activeErrs = activeRes.data?.productSet?.userErrors || [];
   if (activeRes.errors || activeErrs.length > 0) {
     const msg = activeRes.errors?.[0]?.message || activeErrs[0]?.message;
     console.error(`\n  Active error: ${title.slice(0, 30)}: ${msg}`);

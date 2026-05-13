@@ -68,19 +68,8 @@ async function restGet(path) {
   const r = await fetch(`${BASE}${path}`, { headers: { 'X-Shopify-Access-Token': TOKEN } });
   const linkHeader = r.headers.get('link') || '';
   const data = await r.json();
-  // Extract next page URL from Link header
   const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
   return { data, nextUrl: nextMatch ? nextMatch[1] : null };
-}
-
-async function restPut(path, body) {
-  const r = await fetch(`${BASE}${path}`, {
-    method: 'PUT',
-    headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  await sleep(DELAY_MS);
-  return r.json();
 }
 
 async function restPost(path, body) {
@@ -101,6 +90,22 @@ async function gqlQuery(query, variables = {}) {
   });
   await sleep(DELAY_MS);
   return r.json();
+}
+
+// productSet mutation — 2026-04 replacement for deprecated REST PUT /products/:id.json
+// REST product writes are deprecated; productSet is the current Admin GraphQL approach.
+async function gqlProductSet(numericId, fields) {
+  const gid = `gid://shopify/Product/${numericId}`;
+  const result = await gqlQuery(`
+    mutation productSet($synchronous: Boolean!, $input: ProductSetInput!) {
+      productSet(synchronous: $synchronous, input: $input) {
+        product { id title }
+        userErrors { field message code }
+      }
+    }
+  `, { synchronous: true, input: { id: gid, ...fields } });
+  await sleep(DELAY_MS);
+  return result;
 }
 
 // ── Step 1: Fetch ALL products (paginated) ────────────────────────────────────
@@ -198,20 +203,22 @@ for (let i = 0; i < classifications.length; i++) {
     continue;
   }
 
-  const result = await restPut(`/products/${p.id}.json`, {
-    product: {
-      id: p.id,
-      title: newTitle,
-      tags: newTags,
-      product_type: newType,
-    }
+  // Use GraphQL productSet — REST PUT /products/:id.json is deprecated in 2026-04
+  const result = await gqlProductSet(p.id, {
+    title:       newTitle,
+    tags:        c.finalTags,   // productSet accepts string[] directly
+    productType: newType,
   });
 
-  if (result.product) {
-    updated++;
-  } else {
-    console.error(`\n  ❌ Error on "${p.title.slice(0,40)}":`, result.errors || 'unknown');
+  const psErrs = result.data?.productSet?.userErrors;
+  if (psErrs?.length) {
+    console.error(`\n  ❌ Error on "${p.title.slice(0,40)}":`, psErrs[0].message);
     errors++;
+  } else if (result.errors) {
+    console.error(`\n  ❌ GraphQL error on "${p.title.slice(0,40)}":`, result.errors[0].message);
+    errors++;
+  } else {
+    updated++;
   }
 }
 

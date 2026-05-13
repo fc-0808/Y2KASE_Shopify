@@ -25,13 +25,16 @@ const FILTER_ORDER  = ['all', 'new', 'conflict', 'match'];
 const FILTER_LABELS = { all: 'Filter ▾', new: 'New ✕', conflict: 'Conflict ✕', match: 'Match ✕' };
 
 // Fields shown in both diff panes, in display order.
+// productCategory stores the full GID; display only the numeric node ID so the
+// pane stays readable (e.g. "Node 328" instead of the full gid:// URI).
 const DIFF_FIELDS = [
-  { key: 'title',        label: 'Title',        fmt: v => v },
-  { key: 'variantCount', label: 'Variants',      fmt: v => `${v} variant${v !== 1 ? 's' : ''}` },
-  { key: 'priceRange',   label: 'Price Range',   fmt: v => `HK$ ${v}` },
-  { key: 'imageCount',   label: 'Images',        fmt: v => `${v} image${v !== 1 ? 's' : ''}` },
-  { key: 'productType',  label: 'Product Type',  fmt: v => v },
-  { key: 'status',       label: 'Status',        fmt: v => v },
+  { key: 'title',           label: 'Title',        fmt: v => v },
+  { key: 'variantCount',    label: 'Variants',     fmt: v => `${v} variant${v !== 1 ? 's' : ''}` },
+  { key: 'priceRange',      label: 'Price Range',  fmt: v => `HK$ ${v}` },
+  { key: 'imageCount',      label: 'Images',       fmt: v => `${v} image${v !== 1 ? 's' : ''}` },
+  { key: 'productType',     label: 'Product Type', fmt: v => v },
+  { key: 'status',          label: 'Status',       fmt: v => v },
+  { key: 'productCategory', label: 'Category',     fmt: v => v ? `Node ${String(v).split('/').pop()}` : '— not set —' },
 ];
 
 const app = {
@@ -132,6 +135,11 @@ function cacheDOM() {
     diffBadge:        $('diff-badge'),
     diffEtsy:         $('diff-etsy'),
     diffShopify:      $('diff-shopify'),
+
+    // Modal — Category Metafields (Section 2.5, collapsible)
+    cmfDetails:  $('cmf-details'),
+    cmfBadge:    $('cmf-badge'),
+    cmfBody:     $('cmf-body'),
 
     // Modal — Variant Explorer (Section 3, collapsible)
     variantExplorerDetails: $('variant-explorer-details'),
@@ -542,6 +550,10 @@ function openModal(handle) {
   // Auto-open the diff section when there are conflicts; collapse when clean
   if (D.diffDetails) D.diffDetails.open = n > 0;
 
+  // ── Section 2.5: Category Metafields ─────────────────────────────────────
+  // Pass undefined explicitly when the field is absent so the stale-cache path fires.
+  renderCategoryMetafields(product.categoryMetafields);
+
   // ── Section 3: Variant Explorer — always collapsed on open, loads async ───
   if (D.variantExplorerDetails) D.variantExplorerDetails.open = false;
   renderVariantExplorer(handle); // non-blocking: modal opens while table fetches
@@ -716,8 +728,98 @@ function renderDiffPane(paneEl, summary, diffs = []) {
  *
  * @param {string} handle
  */
+/**
+ * Render the Category Metafields section in the Product Inspector modal.
+ *
+ * @param {Array<{key:string, name:string, values:string[]}>|undefined} metafields
+ *   Resolved display objects returned by the server's resolveCategoryMetafieldsForDisplay().
+ *   undefined  → server cache is stale (preview needs to be reloaded)
+ *   []         → pipeline produced no metafields for this product
+ *   [...]      → filled metafields ready to display
+ */
+function renderCategoryMetafields(metafields) {
+  if (!D.cmfBody || !D.cmfBadge || !D.cmfDetails) return;
+
+  // undefined means the preview cache predates this feature — ask the user to reload
+  if (metafields === undefined) {
+    D.cmfBadge.textContent = 'Stale cache';
+    D.cmfBadge.className   = 'diff-badge cmf-badge-stale';
+    D.cmfBody.innerHTML    = `
+      <div class="cmf-empty">
+        <span class="cmf-empty-icon">⟳</span>
+        <span class="cmf-empty-text">
+          Preview cache is outdated. Click <strong>Reload Preview</strong> in the toolbar
+          to rebuild the payload — metafields will appear here automatically.
+        </span>
+      </div>`;
+    D.cmfDetails.open = true;
+    return;
+  }
+
+  if (!metafields.length) {
+    D.cmfBadge.textContent = '0 filled';
+    D.cmfBadge.className   = 'diff-badge no-diffs';
+    D.cmfBody.innerHTML    = `
+      <div class="cmf-empty">
+        <span class="cmf-empty-icon">◎</span>
+        <span class="cmf-empty-text">
+          No category metafields detected for this product.
+          The classifier found no matching signals (material, case type, features, etc.)
+          in the title or tags.
+        </span>
+      </div>`;
+    // Collapse when empty so the modal isn't noisy
+    D.cmfDetails.open = false;
+    return;
+  }
+
+  D.cmfBadge.textContent = `${metafields.length} filled`;
+  D.cmfBadge.className   = 'diff-badge cmf-badge-filled';
+
+  // Render one row per resolved metafield attribute
+  const rows = metafields.map(({ key, name, values }) => {
+    const chips = values
+      .map(v => `<span class="cmf-value-chip" title="${esc(key)}">${esc(v)}</span>`)
+      .join('');
+    return `
+      <div class="cmf-row">
+        <div class="cmf-attr-name">${esc(name)}</div>
+        <div class="cmf-attr-values">${chips}</div>
+      </div>`;
+  }).join('');
+
+  D.cmfBody.innerHTML = `
+    <div class="cmf-intro">
+      These Shopify taxonomy attributes will be set as <code>shopify</code> namespace metafields
+      on every product. Values are resolved from the classifier output.
+    </div>
+    <div class="cmf-grid">${rows}</div>`;
+
+  // Auto-expand when there is data
+  D.cmfDetails.open = true;
+}
+
+// Custom sort weight — bundles ordered by complexity, not alphabetically.
+// Strap variants are not carried — any that arrive from the CSV are
+// auto-converted to their grip equivalents during the transform pipeline.
+const STYLE_WEIGHT = {
+  'Case+Grip+Charm': 1,
+  'Case+Grip':       2,
+  'Case+Charm':      3,
+  'Case Only':       4,
+  'Grip Only':       5,
+  'Charm Only':      6,
+};
+
+// Canonical ordered style list — mirrors STYLE_PRICES keys in transform.mjs.
+// Used by the Style Remapper and Add Style dropdowns.
+const ALL_VALID_STYLES = Object.keys(STYLE_WEIGHT);
+
 async function renderVariantExplorer(handle) {
   if (!D.variantExplorerWrap) return;
+
+  // Persist sort mode across re-renders via dataset on the wrapper element
+  const sortMode = D.variantExplorerWrap.dataset.sortMode || 'model';
 
   // Reset badge and show spinner-style placeholder
   if (D.variantCountBadge) {
@@ -748,13 +850,30 @@ async function renderVariantExplorer(handle) {
       return;
     }
 
-    // Group rows: detect model changes to insert a subtle visual separator
-    let lastModel = null;
-    const rows = data.variants.map(v => {
-      const modelChanged = v.model !== lastModel;
-      lastModel = v.model;
+    // Build style frequency map for the Style Remapper panel
+    const styleCountMap = {};
+    data.variants.forEach(v => { styleCountMap[v.style] = (styleCountMap[v.style] || 0) + 1; });
+    const uniqueStyles = Object.keys(styleCountMap);
+
+    // Sort variants by the active sort mode
+    const sortedVariants = [...data.variants].sort((a, b) => {
+      if (sortMode === 'style') {
+        const sw = (STYLE_WEIGHT[a.style] ?? 99) - (STYLE_WEIGHT[b.style] ?? 99);
+        return sw !== 0 ? sw : a.model.localeCompare(b.model);
+      }
+      // Default: group by model, then by style weight within each model
+      const mc = a.model.localeCompare(b.model);
+      return mc !== 0 ? mc : (STYLE_WEIGHT[a.style] ?? 99) - (STYLE_WEIGHT[b.style] ?? 99);
+    });
+
+    // Group-change detection based on the primary sort key
+    const groupKey  = v => sortMode === 'style' ? v.style : v.model;
+    let   lastGroup = null;
+    const rows = sortedVariants.map(v => {
+      const groupChanged = groupKey(v) !== lastGroup;
+      lastGroup = groupKey(v);
       const isDeleted  = removedSet.has(v.sku);
-      const rowClass   = [modelChanged ? 'vt-model-start' : '', isDeleted ? 'vt-deleted' : ''].filter(Boolean).join(' ');
+      const rowClass   = [groupChanged ? 'vt-model-start' : '', isDeleted ? 'vt-deleted' : ''].filter(Boolean).join(' ');
       const deleteTip  = isDeleted ? 'Restore this variant' : 'Remove this variant before import';
       const deleteIcon = isDeleted ? '↩' : '✕';
       return `
@@ -772,7 +891,88 @@ async function renderVariantExplorer(handle) {
         </tr>`;
     }).join('');
 
+    // Build sort-toggle UI — NO inline onclick (double-quote injection breaks HTML attrs).
+    // Buttons are identified by data-sort attribute; listeners wired after innerHTML.
+    const activeStyle = 'background:var(--accent);color:#fff;border-color:var(--accent)';
+    const dimStyle    = 'opacity:.55';
+
+    // Build Style Remapper panel rows — one row per unique style currently on this product.
+    // Each select includes:
+    //   • All other valid styles (rename)
+    //   • A sentinel "✕ Remove this style" option (deletes all variants of that style)
+    const remapRowsHtml = uniqueStyles.map(style => {
+      const count      = styleCountMap[style];
+      const renameOpts = ALL_VALID_STYLES
+        .filter(s => s !== style)
+        .map(s => `<option value="${esc(s)}">${esc(s)}</option>`)
+        .join('');
+      return `
+        <div class="vt-remap-row">
+          <div class="vt-remap-from-wrap">
+            <span class="vt-remap-from-name">${esc(style)}</span>
+            <span class="vt-remap-count">${count}×</span>
+          </div>
+          <span class="vt-remap-arrow">→</span>
+          <select class="vt-remap-select" data-from="${esc(style)}">
+            <option value="">— keep as-is —</option>
+            ${renameOpts}
+            <option value="__REMOVE__" class="vt-remap-opt-remove">✕  Remove this style</option>
+          </select>
+        </div>`;
+    }).join('');
+
+    // "Add Style" section — only lists styles NOT already on the product
+    const addableStyles = ALL_VALID_STYLES.filter(s => !styleCountMap[s]);
+    const addStyleOpts  = addableStyles
+      .map(s => `<option value="${esc(s)}">${esc(s)}</option>`)
+      .join('');
+    const addStyleHtml = addableStyles.length
+      ? `<div class="vt-add-style-section">
+           <div class="vt-add-style-label">Add a style</div>
+           <div class="vt-add-style-row">
+             <select class="vt-add-style-select" id="vt-add-style-select">
+               <option value="">— select style to add —</option>
+               ${addStyleOpts}
+             </select>
+             <button class="btn btn-ghost btn-sm vt-add-style-btn" id="vt-add-style-btn"
+               title="Generate new variants for all current phone models with this style">
+               + Add Style
+             </button>
+           </div>
+         </div>`
+      : '';
+
     D.variantExplorerWrap.innerHTML = `
+      <div class="vt-toolbar">
+        <button class="btn btn-ghost btn-sm" data-sort="model"
+          style="${sortMode === 'model' ? activeStyle : dimStyle}">
+          Group by Phone Model
+        </button>
+        <button class="btn btn-ghost btn-sm" data-sort="style"
+          style="${sortMode === 'style' ? activeStyle : dimStyle}">
+          Group by Style
+        </button>
+        <div class="vt-toolbar-spacer"></div>
+        <button class="btn btn-ghost btn-sm vt-edit-styles-btn" id="vt-edit-styles-btn"
+          title="Rename, remove, or add style options">
+          ✎ Edit Styles
+          <span class="vt-edit-styles-count">${uniqueStyles.length}</span>
+        </button>
+      </div>
+
+      <div class="vt-style-remap-panel" id="vt-style-remap-panel" hidden>
+        <div class="vt-remap-header">
+          <span class="vt-remap-title">Edit Style Options</span>
+          <span class="vt-remap-hint">Rename or remove a style across all variants in one operation. SKU suffixes and prices update automatically.</span>
+        </div>
+        <div class="vt-remap-rows">${remapRowsHtml}</div>
+        <div class="vt-remap-footer">
+          <button class="btn btn-ghost btn-sm" id="vt-remap-cancel-btn">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="vt-remap-apply-btn">Apply Changes</button>
+        </div>
+        ${addStyleHtml}
+      </div>
+
       <table class="variant-table">
         <colgroup>
           <col class="vt-col-name">
@@ -782,7 +982,7 @@ async function renderVariantExplorer(handle) {
         </colgroup>
         <thead>
           <tr>
-            <th class="vt-name">Model · Style</th>
+            <th class="vt-name">${sortMode === 'style' ? 'Style · Model' : 'Model · Style'}</th>
             <th class="vt-sku-cell">SKU</th>
             <th class="vt-price">Price</th>
             <th></th>
@@ -791,10 +991,58 @@ async function renderVariantExplorer(handle) {
         <tbody>${rows}</tbody>
       </table>`;
 
+    // Wire sort-toggle buttons — safe event delegation, no inline onclick
+    D.variantExplorerWrap.querySelectorAll('[data-sort]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        D.variantExplorerWrap.dataset.sortMode = btn.dataset.sort;
+        renderVariantExplorer(handle);
+      });
+    });
+
     // Wire delete/restore buttons
     D.variantExplorerWrap.querySelectorAll('.vt-delete-btn').forEach(btn => {
       btn.addEventListener('click', () => toggleVariantRemoval(handle, btn.dataset.sku));
     });
+
+    // Wire Style Remapper panel
+    const editStylesBtn = D.variantExplorerWrap.querySelector('#vt-edit-styles-btn');
+    const remapPanel    = D.variantExplorerWrap.querySelector('#vt-style-remap-panel');
+
+    if (editStylesBtn && remapPanel) {
+      editStylesBtn.addEventListener('click', () => {
+        const isOpen = !remapPanel.hasAttribute('hidden');
+        remapPanel.toggleAttribute('hidden', isOpen);
+        editStylesBtn.classList.toggle('vt-edit-styles-active', !isOpen);
+      });
+
+      D.variantExplorerWrap.querySelector('#vt-remap-cancel-btn')
+        ?.addEventListener('click', () => {
+          remapPanel.setAttribute('hidden', '');
+          editStylesBtn.classList.remove('vt-edit-styles-active');
+          // Reset all selects + clear remove tint
+          remapPanel.querySelectorAll('.vt-remap-select').forEach(s => {
+            s.value = '';
+            s.dataset.removing = 'false';
+          });
+        });
+
+      D.variantExplorerWrap.querySelector('#vt-remap-apply-btn')
+        ?.addEventListener('click', () => applyStyleRemaps(handle, remapPanel, editStylesBtn));
+
+      // Visual feedback: tint the select row red when "Remove" is chosen
+      remapPanel.querySelectorAll('.vt-remap-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+          sel.dataset.removing = sel.value === '__REMOVE__' ? 'true' : 'false';
+        });
+      });
+
+      // "+ Add Style" button — generates new variants (all current models × new style)
+      D.variantExplorerWrap.querySelector('#vt-add-style-btn')
+        ?.addEventListener('click', () => {
+          const sel = D.variantExplorerWrap.querySelector('#vt-add-style-select');
+          if (sel?.value) addStyleToProduct(handle, sel.value);
+        });
+    }
 
   } catch (err) {
     D.variantExplorerWrap.innerHTML = `<div class="vt-placeholder vt-error">⚠ ${esc(err.message)}</div>`;
@@ -849,6 +1097,100 @@ function toggleVariantRemoval(handle, sku) {
   })
     .then(r => addLogLine('success', '✓', `Variant list updated: ${r.variantCount} variants remaining`, handle))
     .catch(err => addLogLine('error', '✗', `Variant update failed: ${err.message}`, handle));
+}
+
+/**
+ * Bulk-remap one or more style names across all variants of a product.
+ *
+ * Reads the remap panel's <select> elements, collects all non-empty selections
+ * as { from, to } pairs, posts them to the server, then re-renders the
+ * Variant Explorer so the updated styles/SKUs/prices are immediately visible.
+ *
+ * The server handles:
+ *  - Renaming the style optionValue on each affected variant
+ *  - Recalculating the SKU suffix (e.g. CG → CC)
+ *  - Recalculating the variant price from the canonical STYLE_PRICES matrix
+ *  - Deduplicating variants when a remap merges two existing styles
+ *  - Updating productOptions.Style values for the import payload
+ *
+ * @param {string}      handle
+ * @param {HTMLElement} remapPanel     — the .vt-style-remap-panel element
+ * @param {HTMLElement} editStylesBtn  — the ✎ Edit Styles toggle button
+ */
+async function applyStyleRemaps(handle, remapPanel, editStylesBtn) {
+  // Collect only the selects that have a non-default value chosen
+  const remaps = [];
+  remapPanel.querySelectorAll('.vt-remap-select').forEach(sel => {
+    if (sel.value) remaps.push({ from: sel.dataset.from, to: sel.value });
+  });
+
+  if (!remaps.length) {
+    addLogLine('warn', '⚠', 'No style changes selected — choose a replacement from the dropdowns first.', handle);
+    return;
+  }
+
+  const applyBtn = remapPanel.querySelector('#vt-remap-apply-btn');
+  if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Applying…'; }
+
+  try {
+    const result = await fetchJson(`/api/product/${encodeURIComponent(handle)}/override`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ styleRemaps: remaps }),
+    });
+
+    const summary = remaps
+      .map(r => r.to === '__REMOVE__' ? `removed "${r.from}"` : `"${r.from}" → "${r.to}"`)
+      .join(', ');
+    addLogLine('success', '✓',
+      `Styles updated: ${summary} · ${result.variantCount} variant${result.variantCount !== 1 ? 's' : ''} remaining`,
+      handle);
+
+    // Re-render the Variant Explorer so updated styles/SKUs are reflected
+    renderVariantExplorer(handle);
+
+  } catch (err) {
+    addLogLine('error', '✗', `Style remap failed: ${err.message}`, handle);
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = 'Apply Remaps'; }
+  }
+}
+
+/**
+ * Add a brand-new style to a product by generating one variant for every
+ * current phone model × the requested style.
+ *
+ * The server:
+ *  - Infers the SKU char code from the product's existing variants
+ *  - Builds new variants: Y2K-{CHAR}-{MODEL}-{STYLE_CODE}
+ *  - Assigns the canonical STYLE_PRICES price for the new style
+ *  - Appends the style to productOptions.Style.values
+ *  - Is idempotent — calling twice for the same style is a no-op
+ *
+ * @param {string} handle
+ * @param {string} styleName — must be a value from ALL_VALID_STYLES
+ */
+async function addStyleToProduct(handle, styleName) {
+  const addBtn = D.variantExplorerWrap?.querySelector('#vt-add-style-btn');
+  if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Adding…'; }
+
+  try {
+    const result = await fetchJson(`/api/product/${encodeURIComponent(handle)}/override`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ addStyles: [styleName] }),
+    });
+
+    addLogLine('success', '✓',
+      `"${styleName}" added — ${result.variantCount} variant${result.variantCount !== 1 ? 's' : ''} total`,
+      handle);
+
+    // Re-render so the new variants and updated "Add Style" dropdown are visible
+    renderVariantExplorer(handle);
+
+  } catch (err) {
+    addLogLine('error', '✗', `Add style failed: ${err.message}`, handle);
+    if (addBtn) { addBtn.disabled = false; addBtn.textContent = '+ Add Style'; }
+  }
 }
 
 // ── Override helpers ──────────────────────────────────────────────────────────
@@ -1111,14 +1453,17 @@ function handleSseEvent(data) {
       break;
 
     case 'product_done': {
-      if (data.status === 'created') {
+      if (data.status === 'created' || data.status === 'updated') {
         app.importStats.created++;
-        // Visually mark the row as imported — badge turns to "Imported" (match colour)
+        // Visually mark the row — badge changes to "Imported" or "Updated"
         const row = D.auditTbody.querySelector(`tr[data-handle="${CSS.escape(data.handle)}"]`);
         if (row) {
           row.classList.add('row-imported');
           const badge = row.querySelector('.badge');
-          if (badge) { badge.className = 'badge badge-in-store'; badge.textContent = 'Imported'; }
+          if (badge) {
+            badge.className = 'badge badge-in-store';
+            badge.textContent = data.status === 'updated' ? 'Updated' : 'Imported';
+          }
           // Uncheck the row so it won't be accidentally re-queued
           const cb = row.querySelector('.row-check');
           if (cb) cb.checked = false;

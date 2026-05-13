@@ -59,15 +59,6 @@ async function restGet(path) {
   return res.json();
 }
 
-async function restPut(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'PUT',
-    headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
 async function restPost(path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -154,21 +145,27 @@ if (!COL_ONLY) {
       continue;
     }
 
-    // Apply update
-    const result = await rateLimited(() => restPut(`/products/${c.id}.json`, {
-      product: {
-        id: c.id,
-        product_type: c.shopifyProductType,
-        tags: newTags,
+    // Apply update via GraphQL productSet (2026-04 — REST PUT /products/:id.json is deprecated)
+    const productGid = `gid://shopify/Product/${c.id}`;
+    const result = await rateLimited(() => gql(`
+      mutation productSet($synchronous: Boolean!, $input: ProductSetInput!) {
+        productSet(synchronous: $synchronous, input: $input) {
+          product { id title }
+          userErrors { field message code }
+        }
       }
-    }));
+    `, { synchronous: true, input: { id: productGid, productType: c.shopifyProductType, tags: c.finalTags } }));
 
-    if (result.product) {
+    const psErrs = result.data?.productSet?.userErrors;
+    if (psErrs?.length) {
+      console.error(`  ❌ Error on ${shortTitle}:`, psErrs[0].message);
+      errors++;
+    } else if (result.errors) {
+      console.error(`  ❌ GraphQL error on ${shortTitle}:`, result.errors[0].message);
+      errors++;
+    } else {
       console.log(`  ✅ Updated: ${shortTitle}`);
       updated++;
-    } else {
-      console.error(`  ❌ Error on ${shortTitle}:`, result.errors || result);
-      errors++;
     }
   }
 

@@ -1,287 +1,362 @@
-# Y2KASE — Shopify
+# Y2KASE — Shopify Store Tooling
 
-Theme and Admin API tooling for the Y2KASE Shopify store.  
-Includes a full **Etsy → Shopify ETL pipeline** and a **local audit dashboard** for reviewing products before they go live.
-
----
-
-## Table of Contents
-
-1. [Prerequisites](#1-prerequisites)
-2. [Installation](#2-installation)
-3. [Environment setup](#3-environment-setup)
-4. [Refreshing your API token](#4-refreshing-your-api-token)
-5. [Option A — Local Audit Dashboard (recommended)](#5-option-a--local-audit-dashboard-recommended)
-6. [Option B — CLI Import](#6-option-b--cli-import)
-7. [What the pipeline does](#7-what-the-pipeline-does)
-8. [After the import](#8-after-the-import)
-9. [Troubleshooting](#9-troubleshooting)
-10. [File reference](#10-file-reference)
+Theme development and Admin API tooling for the Y2KASE Shopify store, including a full **Etsy → Shopify import pipeline** with a local audit dashboard.
 
 ---
 
-## 1. Prerequisites
+## Quick Start
+
+```bash
+# 1. Install dependencies
+npm ci
+
+# 2. Copy and fill in secrets
+cp .env.example .env
+
+# 3. Refresh your API token (do this before every session)
+npm run refresh-token
+
+# 4. Export CSV from Etsy → rename to EtsyListingsDownload.csv → place in data/
+
+# 5. Launch the import dashboard
+npm run etsy:dashboard
+```
+
+Open `http://localhost:3000` → click **Load Preview** → review → click **Import Selected**.
+
+---
+
+## How the Pipeline Works
+
+```
+EtsyListingsDownload.csv
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  EXTRACT                                                         │
+│  csv-parser.mjs      Streaming parse, handles BOM + multi-line  │
+│  normalize.mjs       Raw row → clean EtsyProduct object          │
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ENRICH  (optional — requires OPENAI_API_KEY)                    │
+│  llm-enrich.mjs      GPT detects grip/charm/strap from desc      │
+│                      → sets stylesFromDescription on product      │
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  TRANSFORM                                                       │
+│  classifier.mjs      Detects character, IP, style, attachment,  │
+│                      aesthetic, feature from title + tags        │
+│  title-generator.mjs Rewrites keyword-stuffed Etsy title to     │
+│                      clean ≤70-char Shopify title                │
+│  collection-logic.mjs Maps classification → collection GIDs     │
+│  transform.mjs       Assembles the full ProductSetInput payload  │
+│                        • Variant matrix  (model × style)         │
+│                        • Per-bundle pricing                      │
+│                        • SKUs  Y2K-CHAR-MODEL-STYLE              │
+│                        • Custom metafields (etsy_title, SEO)     │
+│                        • Category metafields (25 taxonomy attrs) │
+│                        • SEO title + description                 │
+│  category-metafields.mjs  Maps signals → taxonomy value GIDs   │
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LOAD                                                            │
+│  loader.mjs          Three-step Shopify mutation sequence:       │
+│    Step 1  productSet             Creates product + variants     │
+│    Step 2  productCreateMedia     Attaches Etsy image URLs       │
+│    Step 3  inventorySetOnHandQty  Sets stock at your location    │
+│  shopify-client.mjs  Rate limiter + exponential backoff          │
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+Shopify store — products created as DRAFT, ready to review + publish
+```
+
+---
+
+## Requirements
 
 | Requirement | Version |
 |---|---|
 | Node.js | 20 or later |
 | npm | 9 or later |
-| Shopify Custom App | must have `write_products`, `read_products`, `write_inventory`, `read_locations` scopes |
+| Shopify Custom App scopes | `write_products` `read_products` `write_inventory` `read_locations` |
 
 ---
 
-## 2. Installation
+## Setup
 
-```bash
-npm ci
-```
-
----
-
-## 3. Environment setup
-
-Copy the example file and fill in every value:
+### 1. Environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` must contain:
+Open `.env` and fill in every value:
 
 ```
 SHOPIFY_SHOP=your-store.myshopify.com
-SHOPIFY_CLIENT_ID=<from your Custom App dashboard>
-SHOPIFY_CLIENT_SECRET=<from your Custom App dashboard>
-SHOPIFY_ADMIN_ACCESS_TOKEN=<refreshed — see step 4>
+SHOPIFY_CLIENT_ID=<from Custom App dashboard>
+SHOPIFY_CLIENT_SECRET=<from Custom App dashboard>
+SHOPIFY_ADMIN_ACCESS_TOKEN=<run npm run refresh-token to generate>
 SHOPIFY_API_VERSION=2026-04
+OPENAI_API_KEY=<optional — enables LLM style detection>
 ```
 
-> **Never commit `.env` to git.** It is listed in `.gitignore`.
+> `.env` is in `.gitignore`. Never commit it.
 
-### Place your Etsy CSV
+### 2. Etsy CSV
 
-Download your listings from Etsy: **Shop Manager → Listings → Export as CSV**
+In Etsy: **Shop Manager → Listings → Export as CSV**
 
-Rename the file to exactly:
+Rename the exported file to **exactly**:
 
 ```
 EtsyListingsDownload.csv
 ```
 
-Place it in the **project root** (same folder as `package.json`).
+Place it in the **`data/`** folder (not the project root).
 
----
+### 3. Taxonomy cache (one-time, already done)
 
-## 4. Refreshing your API token
-
-Access tokens expire. **Run this before every import session:**
+The import pipeline fills 25 Shopify "Category metafields" automatically. The valid taxonomy value GIDs are cached locally:
 
 ```bash
-npm run refresh-token
+node scripts/lib/fetch-taxonomy-attrs.mjs
 ```
 
-This fetches a fresh token using your client credentials and writes it directly to `.env`. You do not need to copy anything manually.
+Re-run this only if Shopify updates their product taxonomy (rare).
 
 ---
 
-## 5. Option A — Local Audit Dashboard (recommended)
+## Running an Import
 
-The dashboard lets you review every product before it is pushed to Shopify. It detects duplicates, shows side-by-side diffs between incoming Etsy data and existing Shopify products, and streams live import progress.
-
-### Start the dashboard
+### Option A — Dashboard (recommended)
 
 ```bash
 npm run etsy:dashboard
 ```
 
-The server starts on `http://localhost:3000` and opens automatically in your browser.
+Opens `http://localhost:3000` automatically.
 
-### Dashboard walkthrough
-
-**Status Bar (top)**
-
-Three live indicator pills appear immediately:
+**Status bar** — three pills validate your setup before anything runs:
 
 | Pill | What it checks |
 |---|---|
-| Token | Calls `/api/preflight` to verify your Admin API token is valid |
-| CSV | Confirms `EtsyListingsDownload.csv` exists and shows the row count |
-| Location | Resolves your fulfilment location (`FLAT D 10/F BLOCK 6 LILY MANSION`) to a Shopify GID |
+| Token | Admin API token is valid |
+| CSV | `EtsyListingsDownload.csv` exists and has rows |
+| Location | Resolves your fulfilment location to a Shopify GID |
 
-If any pill is red, fix the issue before continuing (see [Troubleshooting](#9-troubleshooting)).
+**Load Preview** — runs the full ETL transform and diffs incoming data against what's already in your store. Each product gets a badge:
 
-**Product Audit Table (centre)**
-
-Click **Load Preview** to run the full ETL transformation and compare the results against live Shopify data. Each product gets a status badge:
-
-| Badge | Meaning | Default checkbox |
+| Badge | Meaning | Default |
 |---|---|---|
-| **New** | Does not exist in Shopify yet | ✅ Checked |
-| **Conflict** | Exists but data has changed | ⬜ Unchecked — inspect before selecting |
-| **Match** | Exists and is identical | Disabled — no action needed |
+| **New** | Doesn't exist in Shopify | ✅ Selected |
+| **Conflict** | Exists but data changed | ⬜ Review first |
+| **Match** | Identical — nothing to do | Disabled |
 
-**Conflict Inspector**
+Click **Inspect** on any Conflict to open a side-by-side diff (incoming vs. live Shopify). Acknowledge or skip per product.
 
-Click **Inspect** on any Conflict row (or click the row itself) to open the side-by-side diff modal.
+**Import Selected** — streams live progress per product:
+```
+productSet → productCreateMedia → inventorySetOnHandQuantities
+```
 
-- Left pane: incoming Etsy data
-- Right pane: current Shopify live data
-- Changed fields are highlighted in amber
-
-After reviewing, click **Acknowledge & Select** to check the box and include the product in the next import. Click **Skip** to leave it unchecked.
-
-**Running the import**
-
-1. Review your selections in the Audit Table
-2. Use the **Filter ▾** button to quickly see only New / Conflict / Match rows
-3. Click **Import Selected**
-4. Watch live step-by-step progress in the **Import Progress** panel (right side):
-   - Each product streams: `productSet → media → inventory`
-   - Rate-limit pauses and backoff retries are shown in real time
-   - Click **Cancel** at any time to stop the stream safely
-5. The **Import History** panel (bottom) logs every completed run
-
-**Refresh Token button**
-
-If the Token pill turns red mid-session, click **Refresh Token** in the status bar. The server exchanges your client credentials for a new access token automatically.
+Click **Cancel** to stop safely at any time. Re-running skips already-created products.
 
 ---
 
-## 6. Option B — CLI Import
-
-If you prefer the terminal without the dashboard:
-
-### Dry run — always do this first
+### Option B — CLI
 
 ```bash
+# Dry run — prints everything, creates nothing
 npm run etsy:dry
-```
 
-Reads your CSV and prints the exact data that would be sent to Shopify — titles, variants, prices, images, SKUs — **without creating anything in your store.**
-
-Check that:
-- Titles look clean (not keyword-stuffed)
-- Variant prices match the bundle tiers (`Case+Grip+Charm` ≠ `Case Only`)
-- SKUs follow the pattern `Y2K-[CHAR]-[MODEL]-[STYLE]`
-- Location shows: `FLAT D 10/F BLOCK 6 LILY MANSION`
-
-### Live import
-
-```bash
+# Live import
 npm run etsy:apply
 ```
 
-Pushes all products to Shopify. For ~40 products expect roughly **4 minutes** total (rate-limit pacing is enforced automatically).
+---
 
-Progress prints in real time:
+## After the Import
 
-```
-  [ 1/40] ✓  Winnie the Pooh Clear iPhone Case    72 variants · 9 images · 72 inventory
-  [ 2/40] ✓  Snoopy Clear iPhone Case              72 variants · 8 images · 72 inventory
-  [ 3/40] –  SKIP (already exists)  Tamagotchi Clear iPhone Case…
-```
+1. **Shopify Admin → Products** — all imported products are **DRAFT** (invisible to customers)
+2. Review titles, images, and prices
+3. Set status to **Active** to publish
 
-Final summary:
-
-```
-  Products created:  38
-  Products skipped:   2   (already existed in Shopify)
-  Errors:             0
-```
-
-### Safe to re-run
-
-If the import crashes halfway, run `etsy:apply` again. Products already created are **automatically skipped** — they will not be duplicated.
+Collections populate automatically — no manual assignment needed.
 
 ---
 
-## 7. What the pipeline does
+## All npm Scripts
 
-For every row in `EtsyListingsDownload.csv` the pipeline:
-
-1. Cleans the keyword-stuffed Etsy title into a concise Shopify title
-2. Saves the original Etsy title as a hidden SEO metafield
-3. Maps the product to a Shopify Product Type and Collection via the taxonomy classifier
-4. Builds the full variant matrix — every combination of phone model × style bundle
-5. Assigns the correct price per bundle (extracted from the style string or the price matrix)
-6. Generates a unique SKU per variant: `Y2K-CHAR-MODEL-STYLE`
-7. Sets `inventoryManagement: SHOPIFY` and `inventoryPolicy: DENY` on every variant
-8. Pushes the product as **DRAFT** (not visible to customers until you publish)
-9. Attaches all Etsy image URLs to the product
-10. Sets on-hand stock quantities at `FLAT D 10/F BLOCK 6 LILY MANSION`
-
----
-
-## 8. After the import
-
-1. Go to **Shopify Admin → Products**
-2. All imported products have status **Draft** — invisible to customers
-3. Review titles, images, and prices in the Shopify Admin UI
-4. Set status to **Active** to make a product visible in your store
-5. Collections populate automatically via smart rules — no manual assignment needed
-
----
-
-## 9. Troubleshooting
-
-| Problem | Fix |
-|---|---|
-| Token pill is red / `401 Invalid API key` | Run `npm run refresh-token` then reload the dashboard |
-| Location pill is red / `Location not found` | Verify the name in Shopify Admin → Settings → Locations exactly matches `FLAT D 10/F BLOCK 6 LILY MANSION` |
-| CSV pill is red | Confirm `EtsyListingsDownload.csv` is in the project root and is not empty |
-| Dashboard won't open | Make sure port 3000 is free, then run `npm run etsy:dashboard` again |
-| `productSet userErrors` | Check the logged field name — usually a SKU conflict or title over 255 characters |
-| Product exists but data is wrong | Delete the product in Shopify Admin, then re-run — the pipeline will recreate it |
-| Token expires mid-import | Click **Refresh Token** in the dashboard status bar (or run `npm run refresh-token`), then start the import again — already-created products will be skipped |
-| Import stream disconnects | The server sends a heartbeat every 10 s; if the browser reconnects, click Cancel and re-run — skipped products are safe |
-
----
-
-## 10. File reference
-
-### Scripts
-
-| File | Purpose |
-|---|---|
-| `scripts/etsy-api-import.mjs` | CLI entry point — orchestrates the full ETL pipeline |
-| `scripts/lib/csv-parser.mjs` | Streaming CSV parser (handles multi-line fields, BOM) |
-| `scripts/lib/normalize.mjs` | Raw CSV row → normalised JS object |
-| `scripts/lib/transform.mjs` | Title rewriting, variant matrix, pricing, SKU generation |
-| `scripts/lib/loader.mjs` | Shopify API mutations (`productSet`, `productCreateMedia`, `inventorySetOnHandQuantities`) |
-| `scripts/shopify-client.mjs` | GraphQL client with leaky-bucket rate limiting and exponential backoff |
-| `scripts/get-token.mjs` | OAuth client-credentials token refresh utility |
-| `scripts/taxonomy/classifier.mjs` | Character and product-type detection rules |
-| `scripts/taxonomy/title-generator.mjs` | Clean title generation logic |
-
-### Dashboard
-
-| File | Purpose |
-|---|---|
-| `scripts/dashboard/server.mjs` | Express server — API routes, SSE stream, diff logic, history |
-| `scripts/dashboard/public/index.html` | Single-page dashboard UI structure |
-| `scripts/dashboard/public/dashboard.css` | Dark-neutral theme, CSS Grid layout, CSS variables |
-| `scripts/dashboard/public/dashboard.js` | Vanilla JS client — preflight, table, modal, SSE engine, history |
-| `scripts/dashboard/import-history.json` | Auto-generated log of past import runs |
-
-### Config & data
-
-| File | Purpose |
-|---|---|
-| `EtsyListingsDownload.csv` | Your Etsy export — **you provide this** |
-| `.env` | Secrets — never commit |
-| `.env.example` | Template showing all required variables |
-| `ETSY-IMPORT.md` | Legacy CLI-only instructions (superseded by this README) |
-
----
-
-## npm scripts
+### Import pipeline
 
 | Script | What it does |
 |---|---|
-| `npm run etsy:dashboard` | Start the local audit dashboard on `http://localhost:3000` |
+| `npm run etsy:dashboard` | Launch the local audit dashboard on `http://localhost:3000` |
 | `npm run etsy:dry` | Dry-run CLI import — prints payloads, creates nothing |
 | `npm run etsy:apply` | Live CLI import — pushes all products to Shopify |
 | `npm run refresh-token` | Fetch a new Admin API token and write it to `.env` |
-| `npm run dev` | Start Shopify CLI theme development server |
+
+### Post-import tools
+
+| Script | What it does |
+|---|---|
+| `npm run import:dry` | Dry-run the post-import pipeline (title/tag/type fixes) |
+| `npm run import:apply` | Apply post-import fixes to all products |
+| `npm run import:new` | Apply post-import fixes to new-only products |
+| `npm run fix:all` | Fix inventory levels AND sale pricing |
+| `npm run fix:inventory` | Fix inventory levels only |
+| `npm run fix:pricing` | Fix sale pricing only |
+| `npm run fix:dry` | Dry-run the fix pipeline |
+| `npm run audit` | Full store audit report |
+
+### Taxonomy / collections
+
+| Script | What it does |
+|---|---|
+| `npm run taxonomy:dry` | Preview taxonomy + collection setup |
+| `npm run taxonomy:apply` | Apply taxonomy tags and product types |
+| `npm run taxonomy:collections` | Create/update smart collections only |
+
+### Theme development
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Shopify CLI theme dev server (live preview) |
 | `npm run push` | Push theme files to Shopify |
 | `npm run pull` | Pull theme files from Shopify |
+| `npm run push:theme` | Push via Admin API (no CLI required) |
+
+---
+
+## File Map
+
+### Core pipeline — `scripts/`
+
+| File | Role |
+|---|---|
+| `etsy-api-import.mjs` | **CLI entry point** — orchestrates the full ETL for `etsy:dry` / `etsy:apply` |
+| `shopify-client.mjs` | Shared GraphQL client — rate limiter, exponential backoff, token loading |
+| `get-token.mjs` | OAuth client-credentials token refresh |
+| `post-import-pipeline.mjs` | Post-import fixes — title rewrites, product type, tags (GraphQL `productSet`) |
+| `fix-inventory-and-pricing.mjs` | Bulk inventory + sale-price corrections (GraphQL `productVariantsBulkUpdate`) |
+
+### Library — `scripts/lib/`
+
+| File | Role |
+|---|---|
+| `csv-parser.mjs` | Streaming CSV parser — handles BOM, multi-line fields, encoding |
+| `normalize.mjs` | Raw CSV row → typed `EtsyProduct` object |
+| `transform.mjs` | **Core transform** — title, variants, pricing, SKUs, metafields, SEO, category |
+| `loader.mjs` | **Core loader** — `productSet` → `productCreateMedia` → `inventorySetOnHandQuantities` |
+| `llm-enrich.mjs` | Optional GPT enrichment — detects grip/charm from product description |
+| `collection-logic.mjs` | Maps classification signals → collection GIDs for `collectionsToJoin` |
+| `category-metafields.mjs` | Maps classification → 25 Shopify taxonomy category metafield values |
+| `fetch-taxonomy-attrs.mjs` | One-time script — queries live Shopify taxonomy API, writes `.cache/taxonomy-attrs-cache.json` |
+
+### Taxonomy engine — `scripts/taxonomy/`
+
+| File | Role |
+|---|---|
+| `classifier.mjs` | Rule-based classifier — detects character, IP, style, attachment, aesthetic, features |
+| `title-generator.mjs` | Generates clean `≤70-char` Shopify title from classification + Etsy title |
+| `collections-schema.mjs` | Authoritative collection definitions and GID map |
+| `setup-taxonomy.mjs` | Apply product types, tags, and smart collections across the store |
+
+### Dashboard — `scripts/dashboard/`
+
+| File | Role |
+|---|---|
+| `server.mjs` | Express server — preflight, preview/diff, SSE import stream, history, override routes |
+| `public/index.html` | Single-page dashboard UI |
+| `public/dashboard.css` | Dark-neutral theme, CSS Grid, CSS custom properties |
+| `public/dashboard.js` | Vanilla JS client — status pills, audit table, diff modal, SSE engine, history panel |
+
+### Utility scripts — `scripts/`
+
+| File | Role |
+|---|---|
+| `store-audit.mjs` | Full product/collection/policy audit report |
+| `list-products.mjs` | List all products via GraphQL |
+| `list-orders.mjs` | List recent orders |
+| `set-inventory-levels.mjs` | Force-refresh inventory levels |
+| `graphql-republish.mjs` | Republish products via `productSet` (DRAFT → ACTIVE) |
+| `republish-products.mjs` | Bulk republish utility |
+| `setup-store-content.mjs` | Set up pages, navigation menus, and store policies |
+| `check-markets.mjs` | Verify international market configuration |
+| `update-menus.mjs` | Update storefront navigation menus |
+| `fix-policies.mjs` | Sync store policies |
+
+### Data files — `data/`
+
+| File | Role |
+|---|---|
+| `EtsyListingsDownload.csv` | **You provide this** — Etsy export, renamed exactly |
+| `import-history.json` | Auto-generated on first import run — log of every run (gitignored) |
+
+### Cache — `.cache/`
+
+| File | Role |
+|---|---|
+| `taxonomy-attrs-cache.json` | Auto-generated — live Shopify taxonomy value GIDs |
+| `style-enrichments.json` | Auto-generated — LLM enrichment results keyed by description hash |
+
+> `.cache/` is gitignored. Regenerate caches with `node scripts/lib/fetch-taxonomy-attrs.mjs`.
+
+### Docs — `docs/`
+
+| File | Role |
+|---|---|
+| `info.txt` | Store credentials reference |
+| `price.png` | Pricing reference screenshot |
+| `ETSY-IMPORT.md` | Legacy import guide (see README for current process) |
+
+### Root config
+
+| File | Role |
+|---|---|
+| `.env` | **Secrets — never commit** |
+| `.env.example` | Template with all required variable names |
+| `package.json` | npm scripts and dependencies |
+| `shopify.app.toml` | Shopify CLI app configuration |
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Token pill red / `401 Unauthorized` | Run `npm run refresh-token` then reload |
+| Location pill red | Verify the name in Shopify Admin → Settings → Locations exactly matches `FLAT D 10/F BLOCK 6 LILY MANSION` |
+| CSV pill red | Confirm `data/EtsyListingsDownload.csv` exists and is not empty |
+| `Port 3000 is already in use` | Another server process is running — restart your terminal or kill port 3000 |
+| `productSet userErrors` | Check the logged field — usually a SKU collision or title over 255 chars |
+| `@idempotent directive required` | Your API version is 2026-04+ — already fixed; ensure `SHOPIFY_API_VERSION=2026-04` in `.env` |
+| `Invalid productTaxonomyNodeId` | GID format changed — already fixed to `TaxonomyCategory/el-4-8-4-2` |
+| Category metafields empty after import | Run `node scripts/lib/fetch-taxonomy-attrs.mjs` to warm the taxonomy cache |
+| Product exists with wrong data | Delete it in Shopify Admin → re-run import — the pipeline recreates it cleanly |
+| Import crashes halfway | Re-run `npm run etsy:apply` — already-created products are skipped automatically |
+| Stream disconnects mid-import | Click Cancel → re-run — the server heartbeats every 10 s, completed products are safe |
+
+---
+
+## Architecture Notes
+
+**API version:** All mutations use Shopify Admin GraphQL API `2026-04`.
+
+**Idempotency:** Products are de-duplicated by handle. `inventorySetOnHandQuantities` uses `crypto.randomUUID()` per batch to satisfy the `@idempotent` directive requirement.
+
+**Category:** All products are filed under `gid://shopify/TaxonomyCategory/el-4-8-4-2` — *Electronics > Communications > Telephony > Mobile & Smart Phone Accessories > Mobile Phone Cases*.
+
+**Category metafields:** 25 taxonomy attributes are auto-populated per product by mapping classifier signals (attachment type, case style, IP brand, aesthetic) to official Shopify `TaxonomyValue` GIDs. Uses `list.product_taxonomy_value_reference` metafield type in the `shopify` namespace.
+
+**Inventory:** All stock is tracked at `FLAT D 10/F BLOCK 6 LILY MANSION`. `inventoryPolicy: DENY` prevents overselling.
+
+**Drafts:** Every imported product is created as `status: DRAFT`. Nothing goes live until you manually publish in Shopify Admin.

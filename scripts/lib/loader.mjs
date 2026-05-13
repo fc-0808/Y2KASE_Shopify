@@ -79,9 +79,11 @@ export const PRODUCT_CREATE_MEDIA_MUTATION = /* GraphQL */ `
   }
 `;
 
+// @idempotent directive is REQUIRED for this mutation in Shopify API 2026-04+.
+// Each call must supply a unique idempotencyKey UUID to prevent duplicate adjustments.
 export const INVENTORY_SET_MUTATION = /* GraphQL */ `
-  mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
-    inventorySetOnHandQuantities(input: $input) {
+  mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!, $idempotencyKey: String!) {
+    inventorySetOnHandQuantities(input: $input) @idempotent(key: $idempotencyKey) {
       userErrors {
         field
         message
@@ -106,26 +108,52 @@ export const INVENTORY_SET_MUTATION = /* GraphQL */ `
  * Build the variables object for the productSet mutation.
  * Strips pipeline-internal _ fields before sending to the API.
  *
+ * Fields explicitly included:
+ *   Core:            title, descriptionHtml, handle, vendor, productType, status
+ *   Taxonomy:        productCategory  ← required to set the Shopify product category
+ *   Collections:     collectionsToJoin ← required to assign auto-detected collections
+ *   Discovery:       tags, seo, metafields
+ *   Variant matrix:  productOptions, variants
+ *
  * @param {object} payload - output of buildShopifyPayload() from transform.mjs
  * @returns {{ synchronous: boolean, input: object }}
  */
-export function buildProductSetVariables(payload) {
-  return {
-    synchronous: true,
-    input: {
-      title:           payload.title,
-      descriptionHtml: payload.descriptionHtml,
-      handle:          payload.handle,
-      vendor:          payload.vendor,
-      productType:     payload.productType,
-      status:          payload.status,   // always 'DRAFT'
-      tags:            payload.tags,
-      seo:             payload.seo,
-      metafields:      payload.metafields,
-      productOptions:  payload.productOptions,
-      variants:        payload.variants,
-    },
+export function buildProductSetVariables(payload, existingId = null) {
+  const input = {
+    // When updating an existing product pass its GID so Shopify targets the
+    // correct record.  Without this, productSet would create a second product
+    // and auto-suffix the handle (e.g. "my-case-2") instead of updating.
+    ...(existingId ? { id: existingId } : {}),
+    title:           payload.title,
+    descriptionHtml: payload.descriptionHtml,
+    handle:          payload.handle,
+    vendor:          payload.vendor,
+    productType:     payload.productType,
+    status:          payload.status,   // always 'DRAFT'
+    tags:            payload.tags,
+    seo:             payload.seo,
+    metafields:      payload.metafields,
+    productOptions:  payload.productOptions,
+    variants:        payload.variants,
   };
+
+  // Shopify Standard Product Category — API 2024-10+ renamed the input field
+  // from productCategory.productTaxonomyNodeId to a flat `category` ID scalar.
+  // Pass the GID directly; omitting it leaves the category blank in Admin.
+  const categoryId = payload.productCategory?.productTaxonomyNodeId
+    ?? (typeof payload.productCategory === 'string' ? payload.productCategory : null);
+  if (categoryId) {
+    input.category = categoryId;
+  }
+
+  // Collection membership — API 2024-10+ renamed collectionsToJoin → collections.
+  // `collections` is a list field: on UPDATE it REPLACES existing memberships,
+  // so only include it for brand-new products to avoid wiping manual overrides.
+  if (!existingId && Array.isArray(payload.collectionsToJoin) && payload.collectionsToJoin.length > 0) {
+    input.collections = payload.collectionsToJoin;
+  }
+
+  return { synchronous: true, input };
 }
 
 /**
@@ -149,12 +177,17 @@ export function buildMediaVariables(productId, images) {
 /**
  * Build the variables object for inventorySetOnHandQuantities.
  *
- * @param {object[]} inventoryItems - [{inventoryItemId, sku}] from Step 1 response
- * @param {string}   locationId     - GID from resolveLocationId()
- * @param {number}   qty            - on-hand quantity to set
- * @returns {{ input: object }}
+ * As of Shopify API 2026-04, the @idempotent directive is REQUIRED on this
+ * mutation. A unique idempotencyKey must be provided per call to prevent
+ * duplicate inventory adjustments on retries.
+ *
+ * @param {object[]} inventoryItems  - [{inventoryItemId, sku}] from Step 1 response
+ * @param {string}   locationId      - GID from resolveLocationId()
+ * @param {number}   qty             - on-hand quantity to set
+ * @param {string}   idempotencyKey  - UUID unique to this specific batch call
+ * @returns {{ input: object, idempotencyKey: string }}
  */
-export function buildInventoryVariables(inventoryItems, locationId, qty) {
+export function buildInventoryVariables(inventoryItems, locationId, qty, idempotencyKey) {
   return {
     input: {
       reason: 'correction',
@@ -162,9 +195,10 @@ export function buildInventoryVariables(inventoryItems, locationId, qty) {
         inventoryItemId:    item.inventoryItemId,
         locationId,
         quantity:           qty,
-        changeFromQuantity: 0,
+        changeFromQuantity: null,
       })),
     },
+    idempotencyKey,
   };
 }
 
@@ -176,8 +210,8 @@ export function buildInventoryVariables(inventoryItems, locationId, qty) {
  * @param {object} payload - transformed payload from buildShopifyPayload()
  * @returns {{ id, title, handle, inventoryItems: [{inventoryItemId, sku, variantId}] }}
  */
-async function stepCreateProduct(payload) {
-  const variables = buildProductSetVariables(payload);
+async function stepCreateProduct(payload, existingId = null) {
+  const variables = buildProductSetVariables(payload, existingId);
   const result    = await shopifyGql(PRODUCT_SET_MUTATION, variables);
 
   if (result.errors?.length > 0) {
@@ -251,9 +285,11 @@ async function stepSetInventory(inventoryItems, locationId, qty) {
   let totalSet     = 0;
 
   for (let i = 0; i < inventoryItems.length; i += BATCH_SIZE) {
-    const batch     = inventoryItems.slice(i, i + BATCH_SIZE);
-    const variables = buildInventoryVariables(batch, locationId, qty);
-    const result    = await shopifyGql(INVENTORY_SET_MUTATION, variables);
+    const batch           = inventoryItems.slice(i, i + BATCH_SIZE);
+    // Generate a unique UUID per batch — required by @idempotent in Shopify API 2026-04+
+    const idempotencyKey  = crypto.randomUUID();
+    const variables       = buildInventoryVariables(batch, locationId, qty, idempotencyKey);
+    const result          = await shopifyGql(INVENTORY_SET_MUTATION, variables);
 
     if (result.errors?.length > 0) {
       throw new Error(`inventorySetOnHandQuantities: ${result.errors[0].message}`);
@@ -333,23 +369,27 @@ export async function loadProduct(payload, locationId, { dryRun = false, skipExi
         step3_inventorySetOnHandQuantities: {
           mutation:  INVENTORY_SET_MUTATION.trim(),
           variables: buildInventoryVariables(
-            // Generate placeholder inventory item GIDs matching actual variant count
             payload.variants.map((v, i) => ({
               inventoryItemId: `gid://shopify/InventoryItem/<variant_${i + 1}_id from Step 1>`,
               sku:             v.sku,
             })),
             locationId,
-            payload._inventoryQty
+            payload._inventoryQty,
+            '<unique-uuid-per-call>'
           ),
         },
       },
     };
   }
 
-  // ── Skip check ─────────────────────────────────────────────────────────────
-  if (skipExisting) {
-    const existing = await findProductByHandle(payload.handle);
-    if (existing) {
+  // ── Existing product check ─────────────────────────────────────────────────
+  // Always look up the handle in Shopify:
+  //   skipExisting=true  → skip if found (NEW product safety guard)
+  //   skipExisting=false → capture the ID for a proper upsert (CONFLICT / MATCH)
+  let existingId = null;
+  const existing = await findProductByHandle(payload.handle);
+  if (existing) {
+    if (skipExisting) {
       emit({ type: 'skipped', reason: 'handle already exists in Shopify' });
       return {
         status:    'skipped',
@@ -358,10 +398,11 @@ export async function loadProduct(payload, locationId, { dryRun = false, skipExi
         productId: existing.id,
       };
     }
+    existingId = existing.id;
   }
 
-  // ── Step 1: Create product ─────────────────────────────────────────────────
-  const created = await stepCreateProduct(payload);
+  // ── Step 1: Create / update product ────────────────────────────────────────
+  const created = await stepCreateProduct(payload, existingId);
   emit({ type: 'step', step: 'productSet', productId: created.id, variantCount: created.inventoryItems.length });
 
   // ── Step 2: Attach images ─────────────────────────────────────────────────
@@ -383,7 +424,7 @@ export async function loadProduct(payload, locationId, { dryRun = false, skipExi
   }
 
   return {
-    status:            'created',
+    status:            existingId ? 'updated' : 'created',
     productId:         created.id,
     title:             created.title,
     handle:            created.handle,

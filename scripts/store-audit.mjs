@@ -1,5 +1,10 @@
 /**
  * Full store audit: products detail, collections, pages, navigation, SEO
+ *
+ * NOTE: This script uses the Admin REST API for products, pages, and collections
+ * (GET endpoints). These REST resources are deprecated in Shopify 2026-04+ but
+ * remain available for custom apps. For write operations, use GraphQL (productSet,
+ * productVariantsBulkUpdate, etc.) instead of REST.
  */
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';

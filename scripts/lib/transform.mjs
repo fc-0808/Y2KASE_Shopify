@@ -19,6 +19,7 @@
 import { classifyProduct }                  from '../taxonomy/classifier.mjs';
 import { generateTitle, needsTitleRewrite } from '../taxonomy/title-generator.mjs';
 import { getCollectionData }                from './collection-logic.mjs';
+import { buildCategoryMetafields }          from './category-metafields.mjs';
 
 // ── Model fallback ─────────────────────────────────────────────────────────────
 // Used when VARIATION 1 VALUES is completely empty (common for strap products
@@ -55,11 +56,6 @@ const STYLE_PRICES = {
   'Case Only':       261.86,
   'Grip Only':       170.76,
   'Charm Only':      113.82,
-  // ── Strap-based variants (non-grip/charm product type) ─────────────────
-  // Prices mirror the equivalent grip/charm tier; operator can override in
-  // the dashboard's Base Price field before importing if needed.
-  'Case+Strap':      350.11,
-  'Strap Only':      113.82,
 };
 
 // ── SKU code tables ───────────────────────────────────────────────────────────
@@ -86,8 +82,6 @@ const STYLE_SKU_CODE = {
   'Case Only':       'CO',
   'Grip Only':       'GO',
   'Charm Only':      'CHO',
-  'Case+Strap':      'CST',
-  'Strap Only':      'STO',
 };
 
 // Character code for SKU generation — matched against lowercase product title
@@ -164,9 +158,33 @@ const EMBEDDED_PRICE_RE = /^(.+?)\s*\(\s*(?:[A-Z]{3}\s*)?([\d,]+\.?\d*)\s*\)$/i;
 const SHOPIFY_BODY_TEMPLATE = [
   '<h3>✨ Key Features</h3>',
   '<ul>',
-  '  <li>Handcrafted Aesthetic</li>',
-  '  <li>Durable Clear Protection</li>',
-  '  <li>Precision fit for iPhone models</li>',
+  '  <li>Officially licensed character artwork — vibrant, fade-resistant printing</li>',
+  '  <li>MagSafe-compatible magnetic ring built into every case</li>',
+  '  <li>Precision-moulded for a flush, gap-free fit on your iPhone model</li>',
+  '  <li>Raised bezel edges protect your screen and camera lens</li>',
+  '  <li>Slim profile — slides in and out of pockets effortlessly</li>',
+  '</ul>',
+  '',
+  '<h3>🎀 Style &amp; Aesthetic</h3>',
+  '<p>',
+  '  Each Y2KASE design is crafted for the collector who refuses to compromise.',
+  '  From kawaii characters to Y2K nostalgia, every case is a wearable piece of art.',
+  '  Mix and match with our magnetic grips and charms to build your perfect look.',
+  '</p>',
+  '',
+  '<h3>🛡️ Ultimate Protection</h3>',
+  '<ul>',
+  '  <li>Military-grade drop protection — tested to MIL-STD-810G</li>',
+  '  <li>Shock-absorbing TPU bumper absorbs impact without adding bulk</li>',
+  '  <li>Scratch-resistant hard-shell back keeps artwork pristine</li>',
+  '  <li>Wireless charging compatible — no need to remove the case</li>',
+  '</ul>',
+  '',
+  '<h3>🚚 Shipping &amp; Processing</h3>',
+  '<ul>',
+  '  <li>Ships within 1–3 business days from Hong Kong</li>',
+  '  <li>Tracked international shipping available at checkout</li>',
+  '  <li>Carefully packed in branded Y2KASE packaging — gift-ready out of the box</li>',
   '</ul>',
 ].join('\n');
 
@@ -283,18 +301,26 @@ function buildSeoDescription(shopifyTitle, classification) {
 }
 
 /**
- * Build Shopify metafields array for the custom namespace.
+ * Build Shopify metafields array.
  *
- * Metafields created:
- *  custom.etsy_original_title  — keyword-stuffed title preserved for long-tail SEO
- *  custom.seo_keywords         — normalised Etsy tags as comma-separated keyword list
+ * Merges two sets:
+ *  A. Custom namespace (our app data):
+ *     custom.etsy_original_title  — keyword-stuffed title preserved for long-tail SEO
+ *     custom.seo_keywords         — normalised Etsy tags as comma-separated keyword list
+ *  B. Shopify standard taxonomy namespace (category metafields):
+ *     shopify.case-type, shopify.bag-case-material, shopify.case-transparency-level …
+ *     (25 attributes from the "Mobile Phone Cases" taxonomy category, auto-inferred
+ *     from classifier signals — see category-metafields.mjs for full details)
  *
  * @param {object} etsyProduct
  * @param {string} shopifyTitle - the generated clean title
+ * @param {object} classification - output of classifyProduct()
  * @returns {Array<MetafieldInput>}
  */
-function buildMetafields(etsyProduct, shopifyTitle) {
+function buildMetafields(etsyProduct, shopifyTitle, classification) {
   const mf = [];
+
+  // ── A. Custom namespace ────────────────────────────────────────────────────
 
   // Store original Etsy title only when it differs from the rewritten title.
   // Long-tail keyword phrases in the original have measurable organic search value.
@@ -328,6 +354,14 @@ function buildMetafields(etsyProduct, shopifyTitle) {
       type:      'multi_line_text_field',
     });
   }
+
+  // ── B. Shopify standard taxonomy namespace (category metafields) ───────────
+  // Infer values for all available Mobile Phone Cases taxonomy attributes from
+  // our classification signals (styles, features, attachment type …).
+  // Cache-dependent attributes (magsafe-compatibility, case features, etc.)
+  // are populated automatically once fetch-taxonomy-attrs.mjs has been run.
+  const categoryMfs = buildCategoryMetafields(classification);
+  mf.push(...categoryMfs);
 
   return mf;
 }
@@ -378,6 +412,26 @@ function resolveVariations(product) {
     );
     models = MODELS_FALLBACK;
     fallbacksApplied.push('models:default');
+  }
+
+  // ── Strap → Grip normalisation ────────────────────────────────────────────
+  // Strap variants (Case+Strap, Strap Only) are no longer a distinct product
+  // line. Any that arrive from the CSV or LLM enrichment are silently
+  // converted to their grip equivalents so the catalogue stays consistent.
+  // Handles both clean names ("Case+Strap") and embedded-price format
+  // ("Case+Strap (HKD 350.11)") by stripping the price suffix first.
+  const STRAP_TO_GRIP = { 'Case+Strap': 'Case+Grip', 'Strap Only': 'Grip Only' };
+  const hadStrap = styles.some(s => {
+    const base = s.match(/^(.+?)\s*\(/)?.[1]?.trim() ?? s.trim();
+    return STRAP_TO_GRIP[base];
+  });
+  if (hadStrap) {
+    styles = styles.map(s => {
+      const base = s.match(/^(.+?)\s*\(/)?.[1]?.trim() ?? s.trim();
+      return STRAP_TO_GRIP[base] ?? s;
+    });
+    styles = [...new Set(styles)]; // deduplicate if both Case+Strap and Case+Grip existed
+    fallbacksApplied.push('styles:strap-to-grip');
   }
 
   return { product: { ...product, models, styles }, fallbacksApplied };
@@ -513,6 +567,11 @@ export function buildShopifyPayload(etsyProduct) {
     productType:     classification.shopifyProductType,
     status:          'DRAFT',
 
+    // Shopify Standard Product Category — "Mobile Phone Cases" in the taxonomy.
+    // GID format changed in API 2024-10+: TaxonomyCategory replaces ProductTaxonomyNode.
+    // el-4-8-4-2 = Electronics > Communications > Telephony > Mobile & Smart Phone Accessories > Mobile Phone Cases
+    productCategory: { productTaxonomyNodeId: 'gid://shopify/TaxonomyCategory/el-4-8-4-2' },
+
     // Merged tag array: classifier's prefixed taxonomy tags ("char:*", "ip:*",
     // "attach:*", "aesthetic:*" …) plus collection-logic's supplementary
     // storefront tags ("character:*", "brand:*").  Deduplicated via Set above.
@@ -529,7 +588,7 @@ export function buildShopifyPayload(etsyProduct) {
       description: buildSeoDescription(shopifyTitle, classification),
     },
 
-    metafields: buildMetafields(p, shopifyTitle),
+    metafields: buildMetafields(p, shopifyTitle, classification),
 
     productOptions: [
       {

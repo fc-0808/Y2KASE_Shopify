@@ -43,7 +43,28 @@ const DO_PRICING   = !INV_ONLY;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const get  = async (p) => { const r = await fetch(`${BASE}${p}`, {headers:{'X-Shopify-Access-Token':TOKEN}}); return r.json(); };
-const put  = async (p, b) => { const r = await fetch(`${BASE}${p}`, {method:'PUT',headers:{'X-Shopify-Access-Token':TOKEN,'Content-Type':'application/json'},body:JSON.stringify(b)}); await sleep(550); return r.json(); };
+
+// productVariantsBulkUpdate via GraphQL — 2026-04 replacement for REST PUT /products/:id.json
+// REST product write endpoints are deprecated; use GraphQL for all product mutations.
+const GQL_URL = `${BASE}/graphql.json`;
+const gql = async (query, variables = {}) => {
+  const r = await fetch(GQL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': TOKEN },
+    body: JSON.stringify({ query, variables }),
+  });
+  await sleep(550);
+  return r.json();
+};
+
+const BULK_UPDATE_MUTATION = `
+  mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+      productVariants { id price compareAtPrice inventoryPolicy }
+      userErrors { field message }
+    }
+  }
+`;
 
 if (DRY) console.log('\n⚠️  DRY RUN — pass --apply to execute\n');
 
@@ -143,20 +164,27 @@ for (let i = 0; i < allProducts.length; i++) {
     continue;
   }
 
-  // Apply via product update (batch all variants in one PUT)
-  const result = await put(`/products/${p.id}.json`, {
-    product: {
-      id: p.id,
-      variants: updatedVariants,
-    }
+  // Apply via productVariantsBulkUpdate (GraphQL — REST product writes are deprecated in 2026-04)
+  // REST numeric IDs are converted to GIDs for the GraphQL mutation.
+  const productGid  = `gid://shopify/Product/${p.id}`;
+  const gqlVariants = updatedVariants.map(v => {
+    const upd = { id: `gid://shopify/ProductVariant/${v.id}` };
+    if (v.inventory_policy !== undefined) upd.inventoryPolicy = v.inventory_policy.toUpperCase();
+    if (v.price            !== undefined) upd.price           = v.price;
+    if (v.compare_at_price !== undefined) upd.compareAtPrice  = v.compare_at_price;
+    return upd;
   });
 
-  if (result.product) {
+  const result = await gql(BULK_UPDATE_MUTATION, { productId: productGid, variants: gqlVariants });
+
+  const errs = result.data?.productVariantsBulkUpdate?.userErrors || [];
+  if (result.errors || errs.length > 0) {
+    const msg = result.errors?.[0]?.message || errs[0]?.message;
+    console.error(`\n  ❌ Error on "${p.title.slice(0,40)}": ${msg}`);
+    errors++;
+  } else {
     invUpdated   += DO_INV     ? updatedVariants.length : 0;
     priceUpdated += DO_PRICING ? updatedVariants.length : 0;
-  } else {
-    console.error(`\n  ❌ Error on "${p.title.slice(0,40)}":`, result.errors || JSON.stringify(result).slice(0,100));
-    errors++;
   }
 }
 

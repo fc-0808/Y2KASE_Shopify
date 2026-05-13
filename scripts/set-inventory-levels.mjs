@@ -1,10 +1,9 @@
 /**
- * Y2KASE — Force inventory-level refresh via inventory_levels/set.json
+ * Y2KASE — Force inventory-level refresh via inventorySetOnHandQuantities (GraphQL)
  *
  * Sets every inventory item to a fixed positive quantity (3) at the store's
- * fulfillment location. This takes a completely different API code path than
- * variant updates and guarantees Shopify recomputes + invalidates the
- * storefront availability cache for every product.
+ * fulfillment location. Updated to use the GraphQL Admin API (2026-04 compatible)
+ * instead of the deprecated REST POST /inventory_levels/set.json endpoint.
  */
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -20,79 +19,123 @@ loadEnv(resolve(__dirname, '../.env'));
 const SHOP    = process.env.SHOPIFY_SHOP;
 const TOKEN   = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 const VER     = process.env.SHOPIFY_API_VERSION || '2026-04';
-const BASE    = `https://${SHOP}/admin/api/${VER}`;
+const GQL_URL = `https://${SHOP}/admin/api/${VER}/graphql.json`;
 const sleep   = ms => new Promise(r => setTimeout(r, ms));
 
-const get  = async (p) => { const r = await fetch(`${BASE}${p}`, { headers: { 'X-Shopify-Access-Token': TOKEN } }); return r.json(); };
-const post = async (p, b) => {
-  const r = await fetch(`${BASE}${p}`, {
+const gql = async (query, variables = {}) => {
+  const r = await fetch(GQL_URL, {
     method: 'POST',
-    headers: { 'X-Shopify-Access-Token': TOKEN, 'Content-Type': 'application/json' },
-    body: JSON.stringify(b),
+    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': TOKEN },
+    body: JSON.stringify({ query, variables }),
   });
   await sleep(250);
   return r.json();
 };
 
-// Find the fulfillment location ID from an existing inventory level
+// ── Step 1: Resolve fulfillment location GID ──────────────────────────────────
+
 console.log('Finding fulfillment location...');
-const firstProduct = await get('/products.json?limit=1&fields=variants');
-const firstItemId  = firstProduct.products[0].variants[0].inventory_item_id;
-const levelsRes    = await get(`/inventory_levels.json?inventory_item_ids=${firstItemId}`);
-const locationId   = levelsRes.inventory_levels?.[0]?.location_id;
-if (!locationId) {
-  console.error('Could not find location ID. Aborting.');
-  process.exit(1);
-}
-console.log(`Using location: ${locationId}\n`);
+const locsRes  = await gql(`{ locations(first: 50, includeInactive: false) { edges { node { id name } } } }`);
+const locations = locsRes.data?.locations?.edges?.map(e => e.node) ?? [];
+if (!locations.length) { console.error('No locations found. Aborting.'); process.exit(1); }
+// Use first active location (same heuristic as the old REST version)
+const locationGid = locations[0].id;
+console.log(`Using location: ${locations[0].name} (${locationGid})\n`);
 
-// Fetch all products and collect inventory_item_ids for variants that have shopify tracking
+// ── Step 2: Fetch all products + their inventory items via GraphQL ─────────────
+
 console.log('Fetching all products...');
-const allProducts = [];
-let url = `${BASE}/products.json?limit=250&fields=id,title,variants`;
-while (url) {
-  const r    = await fetch(url, { headers: { 'X-Shopify-Access-Token': TOKEN } });
-  const link = r.headers.get('link') || '';
-  const { products } = await r.json();
-  allProducts.push(...(products || []));
-  const next = link.match(/<([^>]+)>;\s*rel="next"/);
-  url = next ? next[1] : null;
-  if (url) await sleep(250);
-}
+const allInventoryItems = [];
+let cursor = null, hasNext = true;
 
-// Collect inventory items that are tracked by Shopify AND have qty <= 0
-const itemsToSet = [];
-for (const p of allProducts) {
-  for (const v of p.variants) {
-    // Only set inventory for shopify-tracked variants with qty <= 0
-    if (v.inventory_management === 'shopify' && v.inventory_quantity <= 0) {
-      itemsToSet.push({ inventory_item_id: v.inventory_item_id, product_title: p.title.slice(0, 40) });
+while (hasNext) {
+  const res = await gql(`
+    query($cursor: String) {
+      products(first: 50, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        edges {
+          node {
+            title
+            variants(first: 250) {
+              edges {
+                node {
+                  inventoryItem {
+                    id
+                    tracked
+                    inventoryLevel(locationId: "${locationGid ? locationGid : ''}") {
+                      quantities(names: ["on_hand"]) { name quantity }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `, { cursor });
+
+  const page = res.data?.products;
+  for (const { node: p } of (page?.edges ?? [])) {
+    for (const { node: v } of (p.variants?.edges ?? [])) {
+      const item     = v.inventoryItem;
+      const onHand   = item?.inventoryLevel?.quantities?.find(q => q.name === 'on_hand')?.quantity ?? 0;
+      if (item?.tracked && onHand <= 0) {
+        allInventoryItems.push({ inventoryItemId: item.id, productTitle: p.title.slice(0, 40) });
+      }
     }
   }
+
+  hasNext = page?.pageInfo?.hasNextPage ?? false;
+  cursor  = page?.pageInfo?.endCursor ?? null;
 }
 
-console.log(`Found ${itemsToSet.length} tracked zero-stock variants to refill to qty=3\n`);
+console.log(`Found ${allInventoryItems.length} tracked zero-stock variants to refill to qty=3\n`);
 
+// ── Step 3: Set inventory via inventorySetOnHandQuantities (GraphQL) ──────────
+
+const INVENTORY_SET_MUTATION = `
+  mutation inventorySetOnHandQuantities($input: InventorySetOnHandQuantitiesInput!) {
+    inventorySetOnHandQuantities(input: $input) {
+      userErrors { field message }
+      inventoryAdjustmentGroup {
+        createdAt
+        changes { name delta quantityAfterChange }
+      }
+    }
+  }
+`;
+
+const BATCH_SIZE = 100;
 let success = 0, errors = 0;
-for (let i = 0; i < itemsToSet.length; i++) {
-  const { inventory_item_id, product_title } = itemsToSet[i];
-  process.stdout.write(`  [${i + 1}/${itemsToSet.length}] Setting qty=3 for item ${inventory_item_id} (${product_title})\r`);
 
-  const res = await post('/inventory_levels/set.json', {
-    location_id: locationId,
-    inventory_item_id,
-    available: 3,
+for (let i = 0; i < allInventoryItems.length; i += BATCH_SIZE) {
+  const batch = allInventoryItems.slice(i, i + BATCH_SIZE);
+  process.stdout.write(`  Setting qty=3 for ${i + 1}–${Math.min(i + BATCH_SIZE, allInventoryItems.length)} of ${allInventoryItems.length}\r`);
+
+  const res = await gql(INVENTORY_SET_MUTATION, {
+    input: {
+      reason: 'correction',
+      setQuantities: batch.map(item => ({
+        inventoryItemId:  item.inventoryItemId,
+        locationId:       locationGid,
+        quantity:         3,
+        changeFromQuantity: null,
+      })),
+    },
   });
 
-  if (res.inventory_level) {
-    success++;
+  const errs = res.data?.inventorySetOnHandQuantities?.userErrors ?? [];
+  if (res.errors || errs.length > 0) {
+    const msg = res.errors?.[0]?.message || errs[0]?.message;
+    console.error(`\n  ❌ Batch ${Math.floor(i / BATCH_SIZE) + 1} error: ${msg}`);
+    errors += batch.length;
   } else {
-    console.error(`\n  ❌ Error for item ${inventory_item_id}:`, JSON.stringify(res).slice(0, 120));
-    errors++;
+    success += batch.length;
   }
 }
 
-if (itemsToSet.length === 0) {
+if (allInventoryItems.length === 0) {
   console.log('No zero-stock tracked variants found — inventory is already at positive levels.');
   console.log('The "Sold out" badges may be a CDN cache issue. Please wait a few minutes and refresh.');
 } else {
