@@ -21,20 +21,32 @@
  *      Fallbacks cover every attribute we auto-populate so the pipeline works
  *      even before the cache file exists.
  *
- * Attributes auto-populated for every Y2KASE product:
- *   case-type                  — Back cover / Wallet with card slots / Stand
- *   case-transparency-level    — Opaque / Clear / Patterned Transparent …
- *   bag-case-material          — TPU (+ Faux leather / Acrylic for specials)
- *   material                   — TPU (generic "Material" attribute)
- *   finish                     — Matte / Gloss / Metallic
- *   attachment-options         — Magnet  (MagSafe products)
- *   magsafe-compatibility      — MagSafe compatible / Not MagSafe compatible
- *   mobile-phone-case-features — Anti-fingerprint, Ring grip, Shockproof, Snug fit
- *   screen-protection-features — Raised edges
- *   integrated-stand-type      — Ring stand  (products with ring-stand feature)
- *   wallet-features            — Card organization  (wallet products)
- *   theme                      — Anime / Cartoons / Pop culture / Retro/Vintage
+ * AUTO-SETTABLE ATTRIBUTES (loader.mjs Step 4 — requires bootstrap cache):
+ *   material               — TPU (generic "Material" attribute)
+ *   theme                  — Anime / Cartoons / Pop culture / Retro/Vintage
+ *   attachment-options     — Magnet  (MagSafe products)
+ *   connectivity-technology — (Bluetooth etc., if applicable)
+ *
+ *   These 4 have Shopify Standard Metafield Definitions enabled on the store.
+ *   Bootstrap: set any Category metafield in Admin, then run:
+ *     node scripts/lib/discover-metaobj-gids.mjs
+ *
+ * MANUAL-ONLY ATTRIBUTES (APP_NOT_AUTHORIZED — no standard definition):
+ *   case-type, case-transparency-level, bag-case-material, finish,
+ *   magsafe-compatibility, mobile-phone-case-features,
+ *   screen-protection-features, integrated-stand-type, wallet-features
+ *
+ *   Must be filled manually in Shopify Admin → Product → Category metafields.
+ *   The dashboard Product Inspector shows the intended values as a reference.
  */
+
+/** Keys for attributes that CAN be set automatically via Step 4 metafieldsSet. */
+export const AUTO_SETTABLE_ATTRS = new Set([
+  'material',
+  'theme',
+  'attachment-options',
+  'connectivity-technology',
+]);
 
 import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname }         from 'path';

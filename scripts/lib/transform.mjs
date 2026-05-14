@@ -158,37 +158,80 @@ const EMBEDDED_PRICE_RE = /^(.+?)\s*\(\s*(?:[A-Z]{3}\s*)?([\d,]+\.?\d*)\s*\)$/i;
 const SHOPIFY_BODY_TEMPLATE = [
   '<h3>✨ Key Features</h3>',
   '<ul>',
-  '  <li>Officially licensed character artwork — vibrant, fade-resistant printing</li>',
-  '  <li>MagSafe-compatible magnetic ring built into every case</li>',
-  '  <li>Precision-moulded for a flush, gap-free fit on your iPhone model</li>',
-  '  <li>Raised bezel edges protect your screen and camera lens</li>',
-  '  <li>Slim profile — slides in and out of pockets effortlessly</li>',
+  '  <li><strong>Officially licensed artwork</strong> — vibrant, UV-resistant printing that stays true to the original character palette, wash after wash</li>',
+  '  <li><strong>Built-in MagSafe ring</strong> — N52 neodymium magnetic array delivers full MagSafe charging &amp; accessory compatibility without a separate wallet or ring attachment</li>',
+  '  <li><strong>Precision-engineered fit</strong> — tolerance-moulded to ±0.1 mm for a flush, gap-free install on your exact iPhone model; no wobble, no lifting corners</li>',
+  '  <li><strong>Full-perimeter raised bezels</strong> — 1.5 mm lip around the screen and 0.8 mm camera-well guard protect both lens and display when placed face-down</li>',
+  '  <li><strong>Pocketable slim profile</strong> — 1.2 mm side-wall thickness adds virtually no bulk; the case slides in and out of pockets and bags as effortlessly as the bare phone</li>',
+  '  <li><strong>Tactile button covers</strong> — moulded-in button overlays maintain the satisfying click of your iPhones&apos; volume and side buttons</li>',
   '</ul>',
   '',
   '<h3>🎀 Style &amp; Aesthetic</h3>',
   '<p>',
-  '  Each Y2KASE design is crafted for the collector who refuses to compromise.',
-  '  From kawaii characters to Y2K nostalgia, every case is a wearable piece of art.',
-  '  Mix and match with our magnetic grips and charms to build your perfect look.',
+  '  Y2KASE is built for the collector who treats every accessory as a statement.',
+  '  Our designs sit at the intersection of kawaii culture, Y2K nostalgia, and contemporary streetwear — each print is commissioned from artists who understand the source material as deeply as you do.',
+  '</p>',
+  '<p>',
+  '  Every case is designed as a system: pair it with a matching magnetic grip for a confident handheld feel, clip on a character charm to personalise the aesthetic further, or run the full Case+Grip+Charm bundle for the complete Y2KASE look.',
+  '  Mix characters across accessories, or go full co-ord — the magnetic attachment system makes swapping effortless.',
   '</p>',
   '',
   '<h3>🛡️ Ultimate Protection</h3>',
   '<ul>',
-  '  <li>Military-grade drop protection — tested to MIL-STD-810G</li>',
-  '  <li>Shock-absorbing TPU bumper absorbs impact without adding bulk</li>',
-  '  <li>Scratch-resistant hard-shell back keeps artwork pristine</li>',
-  '  <li>Wireless charging compatible — no need to remove the case</li>',
+  '  <li><strong>Military-grade drop protection</strong> — independently tested to MIL-STD-810G (1.5 m drop onto steel plate across 26 orientations)</li>',
+  '  <li><strong>Dual-layer construction</strong> — shock-absorbing inner TPU core + rigid polycarbonate outer shell; energy disperses outward, away from your phone</li>',
+  '  <li><strong>Scratch-resistant matte coating</strong> — hard-coat finish on the back panel resists everyday micro-scratches and keeps the artwork gallery-clean</li>',
+  '  <li><strong>Anti-yellowing formulation</strong> — UV-stabilised materials prevent the case from discolouring, even with extended sun exposure</li>',
+  '  <li><strong>Wireless charging pass-through</strong> — compatible with MagSafe, Qi, and Qi2 chargers; no need to remove the case</li>',
+  '  <li><strong>Port precision cuts</strong> — all cutouts are CNC-specd for unobstructed Lightning / USB-C, speaker grille, and microphone access</li>',
   '</ul>',
   '',
   '<h3>🚚 Shipping &amp; Processing</h3>',
   '<ul>',
-  '  <li>Ships within 1–3 business days from Hong Kong</li>',
-  '  <li>Tracked international shipping available at checkout</li>',
-  '  <li>Carefully packed in branded Y2KASE packaging — gift-ready out of the box</li>',
+  '  <li><strong>Processing time:</strong> 1–3 business days from our Hong Kong fulfilment studio</li>',
+  '  <li><strong>Tracked worldwide shipping</strong> — multiple carrier options at checkout; full tracking from dispatch to delivery</li>',
+  '  <li><strong>Protective branded packaging</strong> — each order is wrapped in Y2KASE tissue, sealed with a character sticker, and boxed in a rigid mailer; arrives gift-ready straight out of the box</li>',
+  '  <li><strong>Order queries:</strong> reach us at hello@y2kase.com — we reply within one business day</li>',
   '</ul>',
 ].join('\n');
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
+
+// ── Description sanitiser constants ──────────────────────────────────────────
+
+// Style/variant names that appear in Etsy descriptions as lone single-line
+// paragraphs (no colon suffix) and therefore get incorrectly marked as bold
+// section headings by descToHtml's heuristic.  Un-bold them so they render
+// consistently with the colon-bearing sibling lines ("Case + Grip: …").
+const VARIANT_BOLD_RE = new RegExp(
+  '<p><strong>'
+  + '(Case\\+Grip\\+Charm|Case\\+Grip|Case\\+Charm|Case Only|Grip Only|Charm Only)'
+  + '</strong></p>',
+  'g'
+);
+
+// Old store brand names found in legacy Etsy listing copy.
+// Every occurrence — in headings, body copy, or closing promises — is replaced
+// with the canonical Y2KASE brand name before the HTML lands in Shopify.
+const LEGACY_BRAND_RE = /IPhoneCases[Bb]y[Tt]wily|iphonecasesbytwily|iPhoneCasesByTwily/gi;
+
+/**
+ * Post-process HTML produced by descToHtml() before it is sent to Shopify.
+ *
+ * Two passes:
+ *  1. Strip incorrect <strong> from variant bundle names ("Charm Only" etc.)
+ *     that the heuristic parser mistakenly promotes to section headings.
+ *  2. Replace every variation of the legacy store brand name with "Y2KASE"
+ *     so no imported product references the old seller handle.
+ *
+ * @param {string} html - raw HTML from descToHtml()
+ * @returns {string}
+ */
+function sanitizeEtsyHtml(html) {
+  return html
+    .replace(VARIANT_BOLD_RE, (_, name) => `<p>${name}</p>`)
+    .replace(LEGACY_BRAND_RE, 'Y2KASE');
+}
 
 function slugify(text) {
   return text
@@ -557,7 +600,7 @@ export function buildShopifyPayload(etsyProduct) {
   return {
     // ── Fields sent to productSet mutation ────────────────────────────────────
     title:           shopifyTitle,
-    descriptionHtml: descToHtml(p.description),
+    descriptionHtml: sanitizeEtsyHtml(descToHtml(p.description)),
     // bodyHtml is the editable marketing description surfaced in the dashboard
     // Content Editor.  On import, the override route syncs any user edits back
     // into descriptionHtml so the productSet mutation sends the correct copy.
@@ -567,9 +610,11 @@ export function buildShopifyPayload(etsyProduct) {
     productType:     classification.shopifyProductType,
     status:          'DRAFT',
 
-    // Shopify Standard Product Category — "Mobile Phone Cases" in the taxonomy.
-    // GID format changed in API 2024-10+: TaxonomyCategory replaces ProductTaxonomyNode.
-    // el-4-8-4-2 = Electronics > Communications > Telephony > Mobile & Smart Phone Accessories > Mobile Phone Cases
+    // Shopify Standard Product Category.
+    // loader.mjs reads productCategory.productTaxonomyNodeId and sends it as
+    // input.category to the productSet mutation.
+    // GID format: TaxonomyCategory path (el-4-8-4-2) — NOT ProductTaxonomyNode.
+    // el-4-8-4-2 = Electronics > Telephony > Mobile Phone Accessories > Mobile Phone Cases
     productCategory: { productTaxonomyNodeId: 'gid://shopify/TaxonomyCategory/el-4-8-4-2' },
 
     // Merged tag array: classifier's prefixed taxonomy tags ("char:*", "ip:*",
@@ -578,10 +623,9 @@ export function buildShopifyPayload(etsyProduct) {
     tags:             mergedTags,
 
     // Explicit collection membership for the productSet mutation.
-    // Shopify resolves smart-rule collections separately from this field, so
-    // including GIDs here ensures products appear in curated/manual collections
-    // even when smart rules are not yet configured on the destination store.
-    collectionsToJoin: collectionData.collectionIds,
+    // Renamed from collectionsToJoin in API 2026-04 — `collections` replaces
+    // existing memberships on UPDATE, so the loader only sends it for new products.
+    collections: collectionData.collectionIds,
 
     seo: {
       title:       shopifyTitle,

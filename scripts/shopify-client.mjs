@@ -166,14 +166,31 @@ export async function shopifyGql(query, variables = {}, _attempt = 0) {
   }
 
   // ── Fire the request ───────────────────────────────────────────────────────
-  const res = await fetch(GQL_URL, {
-    method:  'POST',
-    headers: {
-      'Content-Type':          'application/json',
-      'X-Shopify-Access-Token': TOKEN,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  // Wrap in try/catch so transport-level failures (ECONNRESET, DNS, TCP
+  // timeout, "fetch failed" TypeError) are caught here and retried with
+  // the same exponential back-off as HTTP 503, rather than propagating
+  // as an uncaught exception that kills the entire import pipeline.
+  let res;
+  try {
+    res = await fetch(GQL_URL, {
+      method:  'POST',
+      headers: {
+        'Content-Type':          'application/json',
+        'X-Shopify-Access-Token': TOKEN,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (fetchErr) {
+    if (_attempt < MAX_ATTEMPTS - 1) {
+      const waitMs = backoffMs(_attempt);
+      process.stdout.write(
+        `\n  [net] ${fetchErr.message} — backoff ${Math.round(waitMs)}ms (attempt ${_attempt + 1}/${MAX_ATTEMPTS})…\r`
+      );
+      await sleep(waitMs);
+      return shopifyGql(query, variables, _attempt + 1);
+    }
+    throw fetchErr;
+  }
 
   // ── Update REST bucket state ───────────────────────────────────────────────
   const callLimit = res.headers.get('X-Shopify-Shop-Api-Call-Limit');

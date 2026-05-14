@@ -773,30 +773,48 @@ function renderCategoryMetafields(metafields) {
     return;
   }
 
+  // Attributes loader.mjs can set automatically via metafieldsSet (Step 4).
+  // Requires the Metaobject GID bootstrap cache — see discover-metaobj-gids.mjs.
+  const AUTO_SETTABLE = new Set(['material', 'theme', 'attachment-options', 'connectivity-technology']);
+
+  const autoCount   = metafields.filter(m => AUTO_SETTABLE.has(m.key)).length;
+  const manualCount = metafields.length - autoCount;
+
   D.cmfBadge.textContent = `${metafields.length} filled`;
   D.cmfBadge.className   = 'diff-badge cmf-badge-filled';
 
   // Render one row per resolved metafield attribute
   const rows = metafields.map(({ key, name, values }) => {
+    const isAuto  = AUTO_SETTABLE.has(key);
+    const modeBadge = isAuto
+      ? `<span class="cmf-mode-badge cmf-auto" title="Automatically set via metafieldsSet after import">Auto</span>`
+      : `<span class="cmf-mode-badge cmf-manual" title="Must be set manually in Shopify Admin → Category metafields">Manual</span>`;
     const chips = values
       .map(v => `<span class="cmf-value-chip" title="${esc(key)}">${esc(v)}</span>`)
       .join('');
     return `
       <div class="cmf-row">
-        <div class="cmf-attr-name">${esc(name)}</div>
+        <div class="cmf-attr-name">${esc(name)} ${modeBadge}</div>
         <div class="cmf-attr-values">${chips}</div>
       </div>`;
   }).join('');
 
+  const noteAuto   = autoCount   ? `<strong>${autoCount}</strong> auto-set via API` : '';
+  const noteManual = manualCount ? `<strong>${manualCount}</strong> require manual entry in Shopify Admin` : '';
+  const noteParts  = [noteAuto, noteManual].filter(Boolean).join(' · ');
+
   D.cmfBody.innerHTML = `
     <div class="cmf-intro">
-      These Shopify taxonomy attributes will be set as <code>shopify</code> namespace metafields
-      on every product. Values are resolved from the classifier output.
+      ${noteParts}.
+      Auto-set attributes need a one-time bootstrap:
+      set any Category metafield in Admin, then run
+      <code>node scripts/lib/discover-metaobj-gids.mjs</code>.
     </div>
     <div class="cmf-grid">${rows}</div>`;
 
-  // Auto-expand when there is data
-  D.cmfDetails.open = true;
+  // Accordion stays closed by default — the badge count communicates that
+  // metafields are ready without forcing the section open on every modal open.
+  D.cmfDetails.open = false;
 }
 
 // Custom sort weight — bundles ordered by complexity, not alphabetically.
@@ -1433,6 +1451,7 @@ function handleSseEvent(data) {
       break;
 
     case 'step': {
+      const prefix = `[${data.index}/${data.total}]`;
       let msg = data.step;
       if (data.step === 'productSet') {
         msg = `productSet — ${data.variantCount} variant${data.variantCount !== 1 ? 's' : ''} created`;
@@ -1441,7 +1460,7 @@ function handleSseEvent(data) {
       } else if (data.step === 'inventory') {
         msg = `inventory — ${data.itemsSet} quantities set`;
       }
-      addLogLine('success', '✓', `[${data.index}/${data.total}] ${msg}`);
+      addLogLine('success', '✓', `${prefix} ${msg}`);
       break;
     }
 
