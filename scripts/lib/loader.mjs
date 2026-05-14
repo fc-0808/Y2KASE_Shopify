@@ -44,53 +44,7 @@
  * which provides rate limiting and retry logic — this module stays pure.
  */
 
-import { existsSync, readFileSync } from 'fs';
-import { resolve, dirname }         from 'path';
-import { fileURLToPath }            from 'url';
 import { shopifyGql, findProductByHandle } from '../shopify-client.mjs';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// ── Metaobject GID cache (populated by discover-metaobj-gids.mjs) ─────────────
-// Maps display name → Metaobject GID for the 4 standard-template attributes.
-// Format: { attributes: { theme: { "Cartoons": "gid://shopify/Metaobject/XXX" } } }
-const METAOBJ_CACHE_PATH = resolve(__dirname, '../../.cache/taxonomy-metaobj-gid-cache.json');
-const TAXONOMY_CACHE_PATH = resolve(__dirname, '../../.cache/taxonomy-attrs-cache.json');
-
-let _mobjCache  = null;
-let _taxonCache = null;
-
-function getMobjCache() {
-  if (_mobjCache !== null) return _mobjCache;
-  if (existsSync(METAOBJ_CACHE_PATH)) {
-    try { _mobjCache = JSON.parse(readFileSync(METAOBJ_CACHE_PATH, 'utf-8')); }
-    catch { _mobjCache = { attributes: {} }; }
-  } else {
-    _mobjCache = { attributes: {} };
-  }
-  return _mobjCache;
-}
-
-function getTaxonCache() {
-  if (_taxonCache !== null) return _taxonCache;
-  if (existsSync(TAXONOMY_CACHE_PATH)) {
-    try { _taxonCache = JSON.parse(readFileSync(TAXONOMY_CACHE_PATH, 'utf-8')); }
-    catch { _taxonCache = { attributes: {} }; }
-  } else {
-    _taxonCache = { attributes: {} };
-  }
-  return _taxonCache;
-}
-
-// The 4 taxonomy attributes for which we have enabled standard definitions.
-// Values must be submitted as list.metaobject_reference using Metaobject GIDs,
-// NOT as list.product_taxonomy_value_reference with TaxonomyValue GIDs.
-const STANDARD_DEF_ATTRS = new Set([
-  'material',
-  'theme',
-  'attachment-options',
-  'connectivity-technology',
-]);
 
 // ── GraphQL mutation strings ──────────────────────────────────────────────────
 
@@ -326,73 +280,6 @@ export function buildTaxonomyMetafieldsVariables(productId, metafields) {
       value:     mf.value,
     })),
   };
-}
-
-/**
- * Convert the payload's `shopify` namespace metafields (which carry TaxonomyValue
- * GIDs) into the `list.metaobject_reference` format required by the four standard
- * definitions we enabled via standardMetafieldDefinitionEnable.
- *
- * The conversion path:
- *   TaxonomyValue GID  →  display name (via taxonomy attrs cache)
- *   display name       →  Metaobject GID  (via metaobject GID cache from discover-metaobj-gids)
- *
- * Returns an empty array if the Metaobject GID cache is missing (bootstrap not done).
- *
- * @param {object[]} shopifyMetafields - shopify.* MetafieldInputs from payload.metafields
- * @returns {object[]}  MetafieldInput[]  ready for Step 4 metafieldsSet
- */
-export function buildStandardAttrMetafields(shopifyMetafields) {
-  const mobjCache  = getMobjCache();
-  const taxonCache = getTaxonCache();
-
-  // Need at least one attribute in the metaobject cache
-  if (!mobjCache.attributes || Object.keys(mobjCache.attributes).length === 0) {
-    return [];
-  }
-
-  // Build reverse map: TaxonomyValue GID → display name (for each standard attr)
-  const reverseMap = {};   // { attrKey: { "gid://shopify/TaxonomyValue/XXX": "Cartoons" } }
-  for (const attrKey of STANDARD_DEF_ATTRS) {
-    const attrData = taxonCache.attributes?.[attrKey];
-    if (!attrData?.values) continue;
-    reverseMap[attrKey] = {};
-    for (const [name, tvGid] of Object.entries(attrData.values)) {
-      reverseMap[attrKey][tvGid] = name;
-    }
-  }
-
-  const result = [];
-  for (const mf of shopifyMetafields) {
-    if (!STANDARD_DEF_ATTRS.has(mf.key)) continue;
-    const mobjAttr = mobjCache.attributes[mf.key];
-    if (!mobjAttr || Object.keys(mobjAttr).length === 0) continue;
-
-    // Decode TaxonomyValue GIDs from the payload value
-    let tvGids;
-    try { tvGids = JSON.parse(mf.value); } catch { continue; }
-    if (!Array.isArray(tvGids) || tvGids.length === 0) continue;
-
-    // Map each TaxonomyValue GID → display name → Metaobject GID
-    const mobjGids = tvGids
-      .map(tvGid => {
-        const displayName = reverseMap[mf.key]?.[tvGid];
-        if (!displayName) return null;
-        return mobjAttr[displayName] ?? null;
-      })
-      .filter(Boolean);
-
-    if (mobjGids.length === 0) continue;
-
-    result.push({
-      namespace: 'shopify',
-      key:       mf.key,
-      type:      'list.metaobject_reference',
-      value:     JSON.stringify(mobjGids),
-    });
-  }
-
-  return result;
 }
 
 // ── Individual step executors ─────────────────────────────────────────────────
@@ -712,20 +599,14 @@ export async function loadProduct(payload, locationId, { dryRun = false, skipExi
   emit({ type: 'step', step: 'inventory', itemsSet });
 
   // ── Step 4: Set standard taxonomy attribute metafields ────────────────────
-  // Converts the payload's TaxonomyValue GIDs to Metaobject GIDs (using the
-  // cache built by discover-metaobj-gids.mjs) and calls metafieldsSet for the
-  // 4 standard-definition attributes: material, theme, attachment-options,
-  // connectivity-technology.
-  //
-  // Only runs when .cache/taxonomy-metaobj-gid-cache.json exists (bootstrap
-  // done). Falls through silently if cache is missing.
-  //
-  // The remaining Category metafields (case-type, magsafe-compatibility, etc.)
-  // return APP_NOT_AUTHORIZED and must be set manually in Shopify Admin.
+  // Step 4: Set the 4 auto-settable taxonomy attributes via metafieldsSet.
+  // buildCategoryMetafields() (called in transform.mjs) already resolves
+  // display names → Metaobject GIDs using the bootstrap cache, so the
+  // shopify.* metafields in payload.metafields are ready to submit directly.
+  // Falls through silently when the cache has not been bootstrapped yet.
   const shopifyMfs = (payload.metafields ?? []).filter(mf => mf.namespace === 'shopify');
-  const stdMfs     = buildStandardAttrMetafields(shopifyMfs);
-  if (stdMfs.length > 0) {
-    const { metafieldsSet: mfsSet, warnings } = await stepSetTaxonomyMetafields(created.id, stdMfs);
+  if (shopifyMfs.length > 0) {
+    const { metafieldsSet: mfsSet, warnings } = await stepSetTaxonomyMetafields(created.id, shopifyMfs);
     emit({ type: 'step', step: 'taxonomyMetafields', metafieldsSet: mfsSet, warnings });
   }
 

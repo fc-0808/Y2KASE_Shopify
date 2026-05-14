@@ -28,8 +28,7 @@ import { resolve, dirname }         from 'path';
 import { fileURLToPath }            from 'url';
 import { shopifyGql }               from './shopify-client.mjs';
 import { buildCategoryMetafields }  from './lib/category-metafields.mjs';
-import { buildStandardAttrMetafields, METAFIELDS_SET_MUTATION }
-                                    from './lib/loader.mjs';
+import { METAFIELDS_SET_MUTATION }  from './lib/loader.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const METAOBJ_CACHE = resolve(__dirname, '../.cache/taxonomy-metaobj-gid-cache.json');
@@ -126,11 +125,8 @@ for (const p of products) {
     attachment: (get('attachment_type') ?? []).includes('magsafe') ? 'magsafe' : 'none',
   };
 
-  // Build taxonomy metafields (TaxonomyValue GIDs format)
-  const shopifyMfs = buildCategoryMetafields(classification);
-
-  // Convert to Metaobject GIDs for the 4 standard-definition attributes
-  const stdMfs = buildStandardAttrMetafields(shopifyMfs);
+  // Build taxonomy metafields — already resolved to Metaobject GIDs via cache.
+  const stdMfs = buildCategoryMetafields(classification);
 
   if (stdMfs.length === 0) {
     console.log('skip (no standard attrs to set for this classification)');
