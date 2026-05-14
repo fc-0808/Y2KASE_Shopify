@@ -40,7 +40,7 @@
     "open": "^11.0.0"
   },
   "devDependencies": {
-    "@shopify/cli": "^3.93.2"
+    "@shopify/cli": "^3.94.3"
   },
   "engines": {
     "node": ">=20.0.0"

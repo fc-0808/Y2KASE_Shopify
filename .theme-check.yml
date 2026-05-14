@@ -1,0 +1,10 @@
+# AppBlockValidTags is for theme app extension blocks. This repo is a full OS 2.0
+# theme where blocks/*.liquid correctly uses {% stylesheet %} — the check
+# false-positives on every block and breaks `npm run check`.
+AppBlockValidTags:
+  enabled: false
+
+# Non-default locale JSON files intentionally trail en.default.json until
+# translated; Theme Check would fail on dozens of locales for the same keys.
+MatchingTranslations:
+  enabled: false
