@@ -1,0 +1,11 @@
+{
+  "sections": {
+    "welcome-funnel": {
+      "type": "etsy-welcome-funnel",
+      "settings": {}
+    }
+  },
+  "order": [
+    "welcome-funnel"
+  ]
+}

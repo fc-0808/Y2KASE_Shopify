@@ -1,0 +1,547 @@
+{% comment %} Font preloads — before any render {% endcomment %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=Press+Start+2P&display=swap"
+>
+
+<style>
+  /* ── Reset & hide chrome ──────────────────────────────────────── */
+  #header-group,
+  footer {
+    display: none !important;
+  }
+
+  /* ── Page scaffold ────────────────────────────────────────────── */
+  .ewf-page {
+    min-height: 100dvh;
+    background-color: #FDFAFC;
+    background-image:
+      radial-gradient(ellipse 120% 55% at 50% -5%, rgba(240, 160, 198, 0.28) 0%, transparent 62%),
+      radial-gradient(ellipse 70% 40% at 15% 105%,  rgba(200, 170, 240, 0.14) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 35% at 90% 100%,  rgba(255, 195, 220, 0.12) 0%, transparent 60%);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 20px 64px;
+    box-sizing: border-box;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Card ─────────────────────────────────────────────────────── */
+  .ewf-card {
+    width: 100%;
+    max-width: 400px;
+    background: #ffffff;
+    border-radius: 18px;
+    border: 1px solid rgba(220, 165, 192, 0.2);
+    box-shadow:
+      0 0 0 1px rgba(180, 90, 130, 0.03),
+      0 2px 4px  rgba(160, 70, 110, 0.05),
+      0 8px 20px rgba(160, 70, 110, 0.07),
+      0 28px 56px rgba(160, 70, 110, 0.07);
+    padding: 48px 32px 44px;
+    box-sizing: border-box;
+    text-align: center;
+    animation: ewf-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes ewf-rise {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Icon ─────────────────────────────────────────────────────── */
+  .ewf-icon-wrap {
+    margin: 0 auto 26px;
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ewf-bow-svg {
+    width: 52px;
+    height: 36px;
+    display: block;
+    overflow: visible;
+  }
+
+  /* ── Badge ────────────────────────────────────────────────────── */
+  .ewf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(220, 15, 80, 0.06);
+    border: 1px solid rgba(220, 15, 80, 0.14);
+    color: #C4004A;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 5px 13px 5px 13px;
+    border-radius: 999px;
+    margin-bottom: 22px;
+  }
+
+  .ewf-badge-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #E8175A;
+    flex-shrink: 0;
+    animation: ewf-pulse 2.2s ease-in-out infinite;
+  }
+
+  @keyframes ewf-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* ── Headline ─────────────────────────────────────────────────── */
+  .ewf-headline {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(30px, 8vw, 40px);
+    font-weight: 600;
+    font-style: italic;
+    color: #180811;
+    line-height: 1.15;
+    margin: 0 0 8px;
+    letter-spacing: -0.025em;
+  }
+
+  .ewf-headline-accent {
+    font-family: 'Press Start 2P', monospace;
+    font-style: normal;
+    font-size: clamp(16px, 4.5vw, 22px);
+    color: #FF2D87;
+    -webkit-text-stroke: 2.5px #ffffff;
+    paint-order: stroke fill;
+    filter:
+      drop-shadow(0 0 10px rgba(255, 45, 135, 0.55))
+      drop-shadow(0 0 24px rgba(255, 45, 135, 0.25));
+    letter-spacing: 0.06em;
+    display: inline-block;
+    line-height: 1.4;
+  }
+
+  /* ── Subtext ──────────────────────────────────────────────────── */
+  .ewf-subtext {
+    font-size: 13.5px;
+    font-weight: 300;
+    color: #8C6070;
+    line-height: 1.78;
+    margin: 0 0 30px;
+  }
+
+  /* ── Hairline separator ───────────────────────────────────────── */
+  .ewf-sep {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(220, 165, 192, 0.4) 30%, rgba(220, 165, 192, 0.4) 70%, transparent 100%);
+    margin: 0 0 28px;
+  }
+
+  /* ── Form errors ──────────────────────────────────────────────── */
+  .ewf-errors {
+    background: rgba(220, 15, 80, 0.04);
+    border: 1px solid rgba(220, 15, 80, 0.18);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    color: #B00040;
+    text-align: left;
+  }
+  .ewf-errors ul { list-style: none; margin: 0; padding: 0; }
+
+  /* ── Input label ──────────────────────────────────────────────── */
+  .ewf-input-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(140, 96, 112, 0.75);
+    text-align: left;
+    margin-bottom: 7px;
+  }
+
+  /* ── Email input ──────────────────────────────────────────────── */
+  .ewf-input-wrap { margin-bottom: 10px; }
+
+  .ewf-email-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 16px;
+    border: 1px solid rgba(200, 145, 170, 0.32);
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    color: #180811;
+    background: #FEFBFD;
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    -webkit-appearance: none;
+  }
+
+  .ewf-email-input::placeholder {
+    color: rgba(160, 110, 140, 0.38);
+    font-weight: 300;
+  }
+
+  .ewf-email-input:focus {
+    border-color: rgba(232, 23, 90, 0.45);
+    background: #ffffff;
+    box-shadow:
+      0 0 0 3px rgba(232, 23, 90, 0.07),
+      0 1px 3px rgba(232, 23, 90, 0.08);
+  }
+
+  /* ── Primary CTA button ───────────────────────────────────────── */
+  .ewf-btn-submit {
+    width: 100%;
+    margin-top: 4px;
+    padding: 15px 24px;
+    background: #180811;
+    color: #ffffff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow:
+      0 2px 4px rgba(24, 8, 17, 0.18),
+      0 6px 18px rgba(24, 8, 17, 0.22);
+    transition: background 0.18s, box-shadow 0.18s, transform 0.14s;
+    -webkit-appearance: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ewf-btn-submit::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .ewf-btn-submit:hover,
+  .ewf-btn-submit:focus-visible {
+    background: #2C1222;
+    transform: translateY(-1px);
+    box-shadow:
+      0 4px 8px rgba(24, 8, 17, 0.2),
+      0 12px 28px rgba(24, 8, 17, 0.28);
+    outline: none;
+  }
+
+  .ewf-btn-submit:active {
+    transform: translateY(0);
+  }
+
+  /* ── Privacy note ─────────────────────────────────────────────── */
+  .ewf-privacy {
+    font-size: 10.5px;
+    font-weight: 300;
+    color: rgba(140, 96, 112, 0.5);
+    margin-top: 13px;
+    letter-spacing: 0.01em;
+    line-height: 1.5;
+  }
+
+  /* ── Trust row ────────────────────────────────────────────────── */
+  .ewf-trust {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(220, 175, 200, 0.3);
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .ewf-trust-item {
+    font-size: 10px;
+    font-weight: 400;
+    color: rgba(140, 96, 112, 0.6);
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 12px;
+    position: relative;
+  }
+
+  .ewf-trust-item + .ewf-trust-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 10px;
+    background: rgba(200, 155, 178, 0.35);
+  }
+
+  /* ── Success state ────────────────────────────────────────────── */
+  .ewf-success {
+    padding: 8px 0 4px;
+    animation: ewf-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .ewf-check-wrap {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(232, 23, 90, 0.07);
+    border: 1px solid rgba(232, 23, 90, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 22px;
+    animation: ewf-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  @keyframes ewf-pop {
+    from { transform: scale(0.4); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+
+  .ewf-success-headline {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(26px, 7vw, 34px);
+    font-weight: 600;
+    font-style: italic;
+    color: #180811;
+    margin: 0 0 10px;
+    letter-spacing: -0.02em;
+    line-height: 1.18;
+  }
+
+  .ewf-success-body {
+    font-size: 13.5px;
+    font-weight: 300;
+    color: #8C6070;
+    line-height: 1.78;
+    margin: 0 0 8px;
+  }
+
+  .ewf-code-block {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #180811;
+    color: #FFB3D9;
+    font-family: 'DM Sans', monospace;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    padding: 10px 22px;
+    border-radius: 8px;
+    margin: 16px 0 24px;
+  }
+
+  .ewf-code-copy {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 179, 217, 0.55);
+    font-weight: 400;
+    border-left: 1px solid rgba(255, 179, 217, 0.2);
+    padding-left: 10px;
+  }
+
+  .ewf-btn-shop {
+    display: inline-block;
+    padding: 14px 34px;
+    background: #E8175A;
+    color: #ffffff;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border-radius: 10px;
+    box-shadow:
+      0 2px 4px rgba(232, 23, 90, 0.2),
+      0 6px 18px rgba(232, 23, 90, 0.28);
+    transition: transform 0.14s, box-shadow 0.14s;
+  }
+
+  .ewf-btn-shop:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 4px 8px rgba(232, 23, 90, 0.25),
+      0 12px 28px rgba(232, 23, 90, 0.36);
+    color: #ffffff;
+  }
+</style>
+
+<div class="ewf-page">
+  <div class="ewf-card">
+
+    {% comment %} ── Delicate bow icon ── {% endcomment %}
+    <div class="ewf-icon-wrap">
+      <svg class="ewf-bow-svg" viewBox="0 0 80 52" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="ewf-lg-l" x1="0" y1="0" x2="40" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#F87FB0"/>
+            <stop offset="100%" stop-color="#E8175A" stop-opacity="0.6"/>
+          </linearGradient>
+          <linearGradient id="ewf-lg-r" x1="80" y1="0" x2="40" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#D85FB0"/>
+            <stop offset="100%" stop-color="#E8175A" stop-opacity="0.6"/>
+          </linearGradient>
+          <linearGradient id="ewf-lg-tail" x1="40" y1="30" x2="40" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#E8175A" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#E8175A" stop-opacity="0.1"/>
+          </linearGradient>
+        </defs>
+        {% comment %} Left tail {% endcomment %}
+        <path d="M36 28 C32 34 24 44 26 50 C27.5 53 32 46 38 30" fill="url(#ewf-lg-tail)" stroke="#E8175A" stroke-width="0.75" stroke-opacity="0.4"/>
+        {% comment %} Right tail {% endcomment %}
+        <path d="M44 28 C48 34 56 44 54 50 C52.5 53 48 46 42 30" fill="url(#ewf-lg-tail)" stroke="#E8175A" stroke-width="0.75" stroke-opacity="0.4"/>
+        {% comment %} Left bow loop {% endcomment %}
+        <path d="M40 26 C35 18 14 8 4 16 C-2 22 10 32 40 26 Z" fill="url(#ewf-lg-l)" fill-opacity="0.18" stroke="url(#ewf-lg-l)" stroke-width="1.2"/>
+        {% comment %} Right bow loop {% endcomment %}
+        <path d="M40 26 C45 18 66 8 76 16 C82 22 70 32 40 26 Z" fill="url(#ewf-lg-r)" fill-opacity="0.18" stroke="url(#ewf-lg-r)" stroke-width="1.2"/>
+        {% comment %} Inner left sheen {% endcomment %}
+        <path d="M40 26 C34 22 18 14 12 18 C8 21 18 28 40 26Z" fill="#E8175A" fill-opacity="0.09"/>
+        {% comment %} Inner right sheen {% endcomment %}
+        <path d="M40 26 C46 22 62 14 68 18 C72 21 62 28 40 26Z" fill="#E8175A" fill-opacity="0.09"/>
+        {% comment %} Knot {% endcomment %}
+        <circle cx="40" cy="26" r="4.5" fill="#ffffff" stroke="#E8175A" stroke-width="1.5"/>
+        <circle cx="40" cy="26" r="2" fill="#E8175A"/>
+        {% comment %} Sparkle top-left {% endcomment %}
+        <g transform="translate(8, 4)" opacity="0.6">
+          <line x1="4" y1="0" x2="4" y2="8" stroke="#D88BB0" stroke-width="1" stroke-linecap="round"/>
+          <line x1="0" y1="4" x2="8" y2="4" stroke="#D88BB0" stroke-width="1" stroke-linecap="round"/>
+          <line x1="1.2" y1="1.2" x2="6.8" y2="6.8" stroke="#D88BB0" stroke-width="0.7" stroke-linecap="round"/>
+          <line x1="6.8" y1="1.2" x2="1.2" y2="6.8" stroke="#D88BB0" stroke-width="0.7" stroke-linecap="round"/>
+        </g>
+        {% comment %} Sparkle top-right {% endcomment %}
+        <g transform="translate(64, 2)" opacity="0.45">
+          <line x1="3" y1="0" x2="3" y2="6" stroke="#C488B8" stroke-width="0.8" stroke-linecap="round"/>
+          <line x1="0" y1="3" x2="6" y2="3" stroke="#C488B8" stroke-width="0.8" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+
+    {% comment %} ── Status badge ── {% endcomment %}
+    <div class="ewf-badge">
+      <span class="ewf-badge-dot"></span>
+      VIP Access Unlocked
+    </div>
+
+    {% comment %} ── Form / Success state ── {% endcomment %}
+    {% form 'customer' %}
+
+      {% if form.posted_successfully? %}
+
+        {% comment %} ──── SUCCESS STATE ──── {% endcomment %}
+        <div class="ewf-success">
+          <div class="ewf-check-wrap">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12.5L9.5 17L19 7" stroke="#E8175A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h2 class="ewf-success-headline">You're in, Bestie.</h2>
+          <p class="ewf-success-body">
+            Your VIP status is officially unlocked.<br>
+            Add a case &amp; charm to your cart, then enter:
+          </p>
+          <div class="ewf-code-block">
+            MYCHARM
+            <span class="ewf-code-copy">Free charm</span>
+          </div>
+          <p class="ewf-success-body" style="margin-bottom:22px;">
+            at checkout — your charm is <strong style="color:#180811;font-weight:500;">completely free.</strong>
+          </p>
+          <a href="/collections/all" class="ewf-btn-shop">Shop the Collection</a>
+        </div>
+
+      {% else %}
+
+        {% comment %} ──── FORM STATE ──── {% endcomment %}
+        <h1 class="ewf-headline">Welcome to the<br><span class="ewf-headline-accent">Y2KASE Club</span></h1>
+        <p class="ewf-subtext">
+          Enter your email
+          to unlock your free selectable charm and claim
+          permanent VIP&nbsp;status.
+        </p>
+
+        <hr class="ewf-sep">
+
+        {% if form.errors %}
+          <div class="ewf-errors" role="alert">
+            <ul>
+              {% for error in form.errors %}
+                <li>{{ form.errors.messages[error] }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+
+        <input type="hidden" name="contact[tags]" value="newsletter,vip,qr-insert">
+
+        <div class="ewf-input-wrap">
+          <label for="ewf-email" class="ewf-input-label">Email address</label>
+          <input
+            id="ewf-email"
+            type="email"
+            name="contact[email]"
+            class="ewf-email-input"
+            placeholder="you@example.com"
+            required
+            autocomplete="email"
+            inputmode="email"
+            spellcheck="false"
+          >
+        </div>
+
+        <button type="submit" class="ewf-btn-submit">
+          Unlock My Free Gift
+        </button>
+
+        <p class="ewf-privacy">
+          No spam &mdash; unsubscribe any time.
+        </p>
+
+      {% endif %}
+
+    {% endform %}
+
+    {% comment %} ── Trust row ── {% endcomment %}
+    <div class="ewf-trust">
+      <span class="ewf-trust-item">⭐ 1,000+ Reviews</span>
+      <span class="ewf-trust-item">🔒 Secure Checkout</span>
+      <span class="ewf-trust-item">💝 Y2K Guaranteed</span>
+    </div>
+
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Etsy Welcome Funnel",
+  "tag": "div",
+  "settings": [],
+  "presets": [
+    {
+      "name": "Etsy Welcome Funnel"
+    }
+  ]
+}
+{% endschema %}
