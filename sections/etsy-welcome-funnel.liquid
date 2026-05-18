@@ -105,28 +105,64 @@
   /* ── Headline ─────────────────────────────────────────────────── */
   .ewf-headline {
     font-family: 'Cormorant Garamond', Georgia, serif;
-    font-size: clamp(30px, 8vw, 40px);
-    font-weight: 600;
+    font-size: clamp(22px, 6vw, 28px);
+    font-weight: 500;
     font-style: italic;
     color: #180811;
-    line-height: 1.15;
-    margin: 0 0 8px;
-    letter-spacing: -0.025em;
+    line-height: 1.3;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+
+  /* ── Y2KASE pixel wordmark ───────────────────────────────────── */
+  .ewf-wordmark-wrap {
+    display: block;
+    margin: 6px 0 4px;
+    line-height: 1;
   }
 
   .ewf-headline-accent {
     font-family: 'Press Start 2P', monospace;
     font-style: normal;
-    font-size: clamp(16px, 4.5vw, 22px);
+    font-size: clamp(18px, 5.5vw, 26px);
     color: #FF2D87;
-    -webkit-text-stroke: 2.5px #ffffff;
-    paint-order: stroke fill;
-    filter:
-      drop-shadow(0 0 10px rgba(255, 45, 135, 0.55))
-      drop-shadow(0 0 24px rgba(255, 45, 135, 0.25));
-    letter-spacing: 0.06em;
+    /* white outline via text-shadow (works on HTML; paint-order is SVG-only) */
+    text-shadow:
+      -2px -2px 0 #fff,
+       0   -2px 0 #fff,
+       2px -2px 0 #fff,
+       2px  0   0 #fff,
+       2px  2px 0 #fff,
+       0    2px 0 #fff,
+      -2px  2px 0 #fff,
+      -2px  0   0 #fff,
+       0    0  14px rgba(255, 45, 135, 0.65),
+       0    0  30px rgba(255, 45, 135, 0.30);
+    letter-spacing: 0.08em;
     display: inline-block;
-    line-height: 1.4;
+    line-height: 1.3;
+  }
+
+  .ewf-wordmark-sparkle {
+    font-style: normal;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.55em;
+    color: #FFB3D9;
+    vertical-align: super;
+    letter-spacing: 0;
+    text-shadow: none;
+    opacity: 0.9;
+  }
+
+  .ewf-headline-club {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-size: clamp(20px, 5.5vw, 26px);
+    font-weight: 500;
+    color: #180811;
+    letter-spacing: -0.01em;
+    display: block;
+    margin-top: 4px;
   }
 
   /* ── Subtext ──────────────────────────────────────────────────── */
@@ -475,7 +511,13 @@
       {% else %}
 
         {% comment %} ──── FORM STATE ──── {% endcomment %}
-        <h1 class="ewf-headline">Welcome to the<br><span class="ewf-headline-accent">Y2KASE Club</span></h1>
+        <h1 class="ewf-headline">
+          Welcome to the
+          <span class="ewf-wordmark-wrap">
+            <span class="ewf-headline-accent"><span class="ewf-wordmark-sparkle">✦</span>&nbsp;Y2KASE&nbsp;<span class="ewf-wordmark-sparkle">✦</span></span>
+          </span>
+          <span class="ewf-headline-club">Club</span>
+        </h1>
         <p class="ewf-subtext">
           Enter your email
           to unlock your free selectable charm and claim
