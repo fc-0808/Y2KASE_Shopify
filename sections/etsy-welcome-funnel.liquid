@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link
   rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=Press+Start+2P&display=swap"
+  href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=Pixelify+Sans:wght@700&display=swap"
 >
 
 <style>
@@ -117,52 +117,62 @@
   /* ── Y2KASE pixel wordmark ───────────────────────────────────── */
   .ewf-wordmark-wrap {
     display: block;
-    margin: 6px 0 4px;
+    margin: 8px 0 2px;
     line-height: 1;
   }
 
   .ewf-headline-accent {
-    font-family: 'Press Start 2P', monospace;
-    font-style: normal;
-    font-size: clamp(18px, 5.5vw, 26px);
-    color: #FF2D87;
-    /* white outline via text-shadow (works on HTML; paint-order is SVG-only) */
+    font-family: 'Pixelify Sans', monospace !important;
+    font-weight: 700 !important;
+    font-style: normal !important;
+    font-size: clamp(26px, 7.5vw, 38px) !important;
+    color: #FF2D87 !important;
+    /* solid white outline — 8-direction text-shadow technique */
     text-shadow:
-      -2px -2px 0 #fff,
-       0   -2px 0 #fff,
-       2px -2px 0 #fff,
-       2px  0   0 #fff,
-       2px  2px 0 #fff,
-       0    2px 0 #fff,
-      -2px  2px 0 #fff,
-      -2px  0   0 #fff,
-       0    0  14px rgba(255, 45, 135, 0.65),
-       0    0  30px rgba(255, 45, 135, 0.30);
-    letter-spacing: 0.08em;
+      -3px -3px 0 #fff,
+      -1px -3px 0 #fff,
+       1px -3px 0 #fff,
+       3px -3px 0 #fff,
+       3px -1px 0 #fff,
+       3px  1px 0 #fff,
+       3px  3px 0 #fff,
+       1px  3px 0 #fff,
+      -1px  3px 0 #fff,
+      -3px  3px 0 #fff,
+      -3px  1px 0 #fff,
+      -3px -1px 0 #fff,
+      /* pink glow layers */
+       0    0  12px rgba(255, 45, 135, 0.7),
+       0    0  28px rgba(255, 45, 135, 0.4),
+       0    0  48px rgba(255, 45, 135, 0.2) !important;
+    letter-spacing: 0.06em !important;
     display: inline-block;
-    line-height: 1.3;
+    line-height: 1.2;
+    image-rendering: pixelated;
   }
 
   .ewf-wordmark-sparkle {
-    font-style: normal;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 0.55em;
+    font-style: normal !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.45em;
     color: #FFB3D9;
-    vertical-align: super;
+    vertical-align: middle;
     letter-spacing: 0;
-    text-shadow: none;
-    opacity: 0.9;
+    text-shadow: none !important;
+    opacity: 0.85;
+    font-weight: 400 !important;
   }
 
   .ewf-headline-club {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-style: italic;
-    font-size: clamp(20px, 5.5vw, 26px);
-    font-weight: 500;
-    color: #180811;
+    font-family: 'Cormorant Garamond', Georgia, serif !important;
+    font-style: italic !important;
+    font-size: clamp(20px, 5.5vw, 26px) !important;
+    font-weight: 500 !important;
+    color: #180811 !important;
     letter-spacing: -0.01em;
     display: block;
-    margin-top: 4px;
+    margin-top: 6px;
+    text-shadow: none !important;
   }
 
   /* ── Subtext ──────────────────────────────────────────────────── */
