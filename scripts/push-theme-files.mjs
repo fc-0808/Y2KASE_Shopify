@@ -23,6 +23,8 @@ const sleep   = ms => new Promise(r => setTimeout(r, ms));
 const filesToPush = [
   'assets/y2kase.css',
   'layout/theme.liquid',
+  'sections/etsy-welcome-funnel.liquid',
+  'templates/page.welcome.json',
 ];
 
 async function pushFile(key) {

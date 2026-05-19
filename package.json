@@ -32,9 +32,15 @@
     "csv:build": "node scripts/etsy-to-shopify-csv.mjs",
     "etsy:dry": "node scripts/etsy-api-import.mjs --dry-run",
     "etsy:apply": "node scripts/etsy-api-import.mjs --apply",
-    "etsy:dashboard": "node scripts/dashboard/server.mjs"
+    "etsy:dashboard": "node scripts/dashboard/server.mjs",
+    "etsy:dedupe": "node scripts/semantic-dedupe.mjs",
+    "etsy:dedupe:fast": "node scripts/semantic-dedupe.mjs --concurrency 15",
+    "etsy:dedupe:mdm": "node scripts/semantic-dedupe-sqlite.mjs",
+    "etsy:dedupe:mdm:fast": "node scripts/semantic-dedupe-sqlite.mjs --concurrency 15",
+    "etsy:dedupe:mdm:reset": "node scripts/semantic-dedupe-sqlite.mjs --reset-cache"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "open": "^11.0.0"

@@ -1,0 +1,75 @@
+---
+description: Y2KASE brand style guide — all pages and UI must be consistent with the logo aesthetic
+alwaysApply: true
+---
+
+# Y2KASE Brand Style Guide
+
+All website pages, sections, snippets, and UI elements must stay visually consistent with the Y2KASE logo. The brand is **Y2K kawaii** — soft pastels, hot pink accents, pixelated retro type, sparkle details, and iridescent/holographic touches.
+
+## Color Palette
+
+| Role | Value | Notes |
+|---|---|---|
+| Primary accent | `#FF4EC7` | Hot magenta — buttons, headings, highlights |
+| Background gradient start | `#FFD6EC` | Soft pink |
+| Background gradient mid | `#D9B8F5` | Soft lavender/purple |
+| Background gradient end | `#B8E4FA` | Baby blue |
+| Text on light bg | `#3B1F5E` | Deep purple-navy |
+| White/pearl | `#FFFFFF` | Card backgrounds, glows |
+| Star/sparkle gold | `#FFE899` | Accent sparkles only |
+
+Never use: plain black (`#000`), stark grey, cool corporate blues, or flat muted tones that clash with the pastel palette.
+
+## Typography
+
+- **Brand/heading font**: pixel or retro 8-bit style (e.g. `Press Start 2P`, `VT323`, or `Silkscreen`) for hero headings and the store name.
+- **Body font**: rounded, friendly sans-serif (e.g. `Nunito`, `Poppins`, `Quicksand`).
+- Avoid serif fonts, condensed fonts, or anything that feels corporate or neutral.
+
+## Backgrounds & Gradients
+
+Prefer soft diagonal or radial pastel gradients over flat colors:
+
+```css
+/* ✅ On-brand background */
+background: linear-gradient(135deg, #FFD6EC 0%, #D9B8F5 50%, #B8E4FA 100%);
+
+/* ❌ Off-brand */
+background: #ffffff;
+background: #f5f5f5;
+```
+
+## UI Elements
+
+- **Buttons**: hot pink/magenta fill with white text, rounded corners (`border-radius: 999px` pill style), subtle pink glow on hover.
+- **Cards/containers**: white or very light pink background, soft box-shadow with a pink or lavender tint, rounded corners (`border-radius: 16px–24px`).
+- **Borders**: use light lavender or pink tones; never dark or harsh borders.
+- **Icons & motifs**: hearts ♡, stars ✦, butterflies, sparkles — lean into these as decorative accents.
+- **Badges/labels**: pastel pill badges (pink, lavender, blue) with dark purple text.
+
+## Iridescent / Holographic Effects
+
+Logo uses rainbow/iridescent elements (glasses, pixel heart). Replicate sparingly with:
+
+```css
+/* Holographic shimmer text */
+background: linear-gradient(90deg, #FF4EC7, #B8E4FA, #D9B8F5, #FF4EC7);
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-size: 200%;
+animation: shimmer 3s linear infinite;
+```
+
+Use only on hero headings or special callouts — not body text.
+
+## Sparkles & Decorative Details
+
+Add `✦` or `✨` sparkle characters or CSS pseudo-elements around key UI touchpoints (hero titles, CTA buttons, section dividers). Keep them subtle — 2–4 per viewport.
+
+## What to Avoid
+
+- Flat, corporate, or minimalist design that strips the playful kawaii energy.
+- Dark mode / dark backgrounds (the brand is light and pastel).
+- Harsh contrast — everything should feel soft and dreamy.
+- Overloading with rainbow — accent sparingly; the base should be pastel.
